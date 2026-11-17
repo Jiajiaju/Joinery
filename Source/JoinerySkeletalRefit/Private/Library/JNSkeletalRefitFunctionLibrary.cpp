@@ -514,7 +514,7 @@ void UJNSkeletalRefitFunctionLibrary::AppendPartToMeshDescription(const FJNSkele
 	}
 	FStaticMeshOperations::AppendMeshDescription(PartDescription, MeshDescription, AppendSettings);
 
-	// 蒙皮权重换成合并后的骨骼下标；顶点上的自定义属性一并带过来，变形目标的位移就存在其中
+	// 蒙皮权重换成合并后的骨骼下标；顶点上的自定义属性一并带过来
 	FSkeletalMeshOperations::FSkeletalMeshAppendSettings SkinSettings;
 	SkinSettings.SourceVertexIDOffset = VertexOffset;
 	SkinSettings.bAppendVertexAttributes = true;
@@ -524,6 +524,23 @@ void UJNSkeletalRefitFunctionLibrary::AppendPartToMeshDescription(const FJNSkele
 		SkinSettings.SourceRemapBoneIndex.Add(static_cast<FBoneIndexType>(NewBoneIndex));
 	}
 	FSkeletalMeshOperations::AppendSkinWeight(PartDescription, MeshDescription, SkinSettings);
+
+	// 变形目标是保留属性，引擎追加顶点属性时会跳过，这里按同样的顶点对位自己搬位移；法线不搬，由引擎重算
+	const FSkeletalMeshConstAttributes PartSkeletalAttributes(PartDescription);
+	FSkeletalMeshAttributes MeshAttributes(MeshDescription);
+	for (const FName MorphName : PartSkeletalAttributes.GetMorphTargetNames())
+	{
+		if (!MeshAttributes.GetMorphTargetNames().Contains(MorphName)) MeshAttributes.RegisterMorphTargetAttribute(MorphName, false);
+
+		const TVertexAttributesConstRef<FVector3f> SourceDeltas = PartSkeletalAttributes.GetVertexMorphPositionDelta(MorphName);
+		TVertexAttributesRef<FVector3f> TargetDeltas = MeshAttributes.GetVertexMorphPositionDelta(MorphName);
+		if (!SourceDeltas.IsValid() || !TargetDeltas.IsValid()) continue;
+
+		for (const FVertexID SourceVertexID : PartDescription.Vertices().GetElementIDs())
+		{
+			TargetDeltas.Set(FVertexID(VertexOffset + SourceVertexID.GetValue()), SourceDeltas.Get(SourceVertexID));
+		}
+	}
 }
 
 void UJNSkeletalRefitFunctionLibrary::CollectWeightedBones(const USkeletalMesh* Mesh, TSet<int32>& OutWeightedBones)
