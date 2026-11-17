@@ -14,6 +14,7 @@
 #include "GroomBindingAsset.h"
 #include "IAssetTools.h"
 #include "JNSkeletalRefitLog.h"
+#include "Animation/MorphTarget.h"
 #include "MeshDescription.h"
 #include "Misc/PackageName.h"
 #include "PhysicsEngine/PhysicsAsset.h"
@@ -21,6 +22,10 @@
 #include "ReferenceSkeleton.h"
 #include "RenderingThread.h"
 #include "SkeletalMeshAttributes.h"
+#include "SkeletalMeshOperations.h"
+#include "StaticMeshAttributes.h"
+#include "StaticMeshOperations.h"
+#include "Struct/JNSkeletalRefitMergePart.h"
 #include "Struct/JNSkeletalRefitPlan.h"
 #include "Struct/JNSkeletalRefitResult.h"
 #include "Struct/JNSkeletalRefitSettings.h"
@@ -132,6 +137,55 @@ bool UJNSkeletalRefitFunctionLibrary::IsPhysicsAssetCompatible(const UPhysicsAss
 	return true;
 }
 
+bool UJNSkeletalRefitFunctionLibrary::BuildMergedPlan(const FJNSkeletalRefitSettings& Settings, const TArray<USkeletalMesh*>& SourceMeshes, FJNSkeletalRefitPlan& OutPlan, FJNSkeletalRefitResult& OutResult)
+{
+	if (SourceMeshes.IsEmpty())
+	{
+		OutResult.Error = LOCTEXT("NoSourceMesh", "No source mesh.");
+		return false;
+	}
+
+	// 第一个网格是底，方案以它为准
+	if (!BuildPlan(Settings, SourceMeshes[0], OutPlan, OutResult)) return false;
+
+	// 其余网格各算各的方案，再把它们多出来的骨骼补进底的骨骼层级，权重去向换成合并后的下标
+	OutPlan.MergeParts.Reset();
+	for (int32 MeshIndex = 1; MeshIndex < SourceMeshes.Num(); ++MeshIndex)
+	{
+		FJNSkeletalRefitPlan PartPlan;
+		if (!BuildPlan(Settings, SourceMeshes[MeshIndex], PartPlan, OutResult)) return false;
+
+		TArray<int32> PartToMergedIndex;
+		PartToMergedIndex.Init(INDEX_NONE, PartPlan.RefSkeleton.GetRawBoneNum());
+		for (int32 PartBoneIndex = 0; PartBoneIndex < PartPlan.RefSkeleton.GetRawBoneNum(); ++PartBoneIndex)
+		{
+			const FName BoneName = PartPlan.RefSkeleton.GetBoneName(PartBoneIndex);
+			int32 MergedIndex = OutPlan.RefSkeleton.FindRawBoneIndex(BoneName);
+			if (MergedIndex == INDEX_NONE)
+			{
+				// 骨骼是父先子后，父骨骼此时一定已经在合并后的层级里
+				const int32 PartParentIndex = PartPlan.RefSkeleton.GetRawParentIndex(PartBoneIndex);
+				const int32 MergedParentIndex = PartParentIndex != INDEX_NONE ? PartToMergedIndex[PartParentIndex] : INDEX_NONE;
+				MergedIndex = OutPlan.RefSkeleton.GetRawBoneNum();
+
+				FReferenceSkeletonModifier Modifier(OutPlan.RefSkeleton, nullptr);
+				Modifier.Add(FMeshBoneInfo(BoneName, BoneName.ToString(), MergedParentIndex), PartPlan.RefSkeleton.GetRawRefBonePose()[PartBoneIndex]);
+			}
+			PartToMergedIndex[PartBoneIndex] = MergedIndex;
+		}
+
+		FJNSkeletalRefitMergePart& Part = OutPlan.MergeParts.AddDefaulted_GetRef();
+		Part.Mesh = SourceMeshes[MeshIndex];
+		Part.SourceToFinalName = PartPlan.SourceToFinalName;
+		Part.SourceToNewIndex.Reserve(PartPlan.SourceToNewIndex.Num());
+		for (const int32 PartBoneIndex : PartPlan.SourceToNewIndex)
+		{
+			Part.SourceToNewIndex.Add(PartToMergedIndex[PartBoneIndex]);
+		}
+	}
+	return true;
+}
+
 bool UJNSkeletalRefitFunctionLibrary::ApplyPlan(const FJNSkeletalRefitPlan& Plan, USkeletalMesh* Mesh, USkeleton* Skeleton, FJNSkeletalRefitResult& OutResult)
 {
 	if (!IsValid(Mesh) || !IsValid(Skeleton))
@@ -140,14 +194,18 @@ bool UJNSkeletalRefitFunctionLibrary::ApplyPlan(const FJNSkeletalRefitPlan& Plan
 		return false;
 	}
 
-	const int32 MorphCountBefore = Mesh->GetMorphTargets().Num();
+	// 合并后应有的变形目标：底的加上各个并入网格的
+	TSet<FName> ExpectedMorphNames;
+	CollectMorphTargetNames(Mesh, ExpectedMorphNames);
+	for (const FJNSkeletalRefitMergePart& Part : Plan.MergeParts)
+	{
+		CollectMorphTargetNames(Part.Mesh.Get(), ExpectedMorphNames);
+	}
 
 	// 换骨骼之前先记下旧层级的模型空间姿态与旧骨架，插槽的相对位置要靠它们换算
 	const FReferenceSkeleton OldRefSkeleton = Mesh->GetRefSkeleton();
 	const USkeleton* OldSkeleton = Mesh->GetSkeleton();
-	TArray<FTransform> OldGlobals;
 	TArray<FTransform> NewGlobals;
-	ComputeGlobalPose(OldRefSkeleton, OldGlobals);
 	ComputeGlobalPose(Plan.RefSkeleton, NewGlobals);
 
 	// 换骨骼层级并重算绑定：顶点不动，只有骨骼的静止姿态变了
@@ -179,6 +237,34 @@ bool UJNSkeletalRefitFunctionLibrary::ApplyPlan(const FJNSkeletalRefitPlan& Plan
 		}
 	}
 
+	// 并入网格的材质槽追加在底的后面；槽名与已有的重复时改名，各自保持自己的分段
+	TArray<TMap<FName, FName>> PartSlotNames;
+	TArray<FSkeletalMaterial> Materials = Mesh->GetMaterials();
+	for (const FJNSkeletalRefitMergePart& Part : Plan.MergeParts)
+	{
+		TMap<FName, FName>& SlotNames = PartSlotNames.AddDefaulted_GetRef();
+		const USkeletalMesh* PartMesh = Part.Mesh.Get();
+		if (!IsValid(PartMesh)) continue;
+
+		if (!PartMesh->GetMeshClothingAssets().IsEmpty())
+		{
+			OutResult.Warnings.Add(FText::Format(LOCTEXT("PartClothDropped", "'{0}' has cloth data. Only the cloth of the first mesh is kept when meshes are merged."), FText::FromString(PartMesh->GetName())));
+		}
+
+		for (const FSkeletalMaterial& PartMaterial : PartMesh->GetMaterials())
+		{
+			const FName OldSlotName = PartMaterial.ImportedMaterialSlotName.IsNone() ? PartMaterial.MaterialSlotName : PartMaterial.ImportedMaterialSlotName;
+			const bool bSlotNameTaken = Materials.ContainsByPredicate([OldSlotName](const FSkeletalMaterial& Material) { return Material.ImportedMaterialSlotName == OldSlotName || Material.MaterialSlotName == OldSlotName; });
+			const FName NewSlotName = bSlotNameTaken ? FName(*(OldSlotName.ToString() + JNSkeletalRefitConstants::MergedSlotSeparator + PartMesh->GetName())) : OldSlotName;
+
+			FSkeletalMaterial& NewMaterial = Materials.Add_GetRef(PartMaterial);
+			NewMaterial.MaterialSlotName = NewSlotName;
+			NewMaterial.ImportedMaterialSlotName = NewSlotName;
+			SlotNames.Add(OldSlotName, NewSlotName);
+		}
+	}
+	if (!Plan.MergeParts.IsEmpty()) Mesh->SetMaterials(Materials);
+
 	for (int32 LODIndex = 0; LODIndex < Mesh->GetLODNum(); ++LODIndex)
 	{
 		if (!Mesh->HasMeshDescription(LODIndex)) continue;
@@ -187,49 +273,35 @@ bool UJNSkeletalRefitFunctionLibrary::ApplyPlan(const FJNSkeletalRefitPlan& Plan
 		if (!Mesh->CloneMeshDescription(LODIndex, MeshDescription)) continue;
 
 		ApplyPlanToMeshDescription(Plan, MeshDescription);
+		for (int32 PartIndex = 0; PartIndex < Plan.MergeParts.Num(); ++PartIndex)
+		{
+			AppendPartToMeshDescription(Plan.MergeParts[PartIndex], PartSlotNames[PartIndex], LODIndex, MeshDescription, OutResult);
+		}
+
 		Mesh->ModifyMeshDescription(LODIndex);
 		Mesh->CreateMeshDescription(LODIndex, MoveTemp(MeshDescription));
 		Mesh->CommitMeshDescription(LODIndex);
 	}
 
-	// 来源骨架上的插槽不跟网格走，复制成网格自己的插槽；网格上已有同名插槽的不覆盖
-	if (Plan.bCopySkeletonSockets && IsValid(OldSkeleton))
-	{
-		for (const USkeletalMeshSocket* SkeletonSocket : OldSkeleton->Sockets)
-		{
-			if (!IsValid(SkeletonSocket)) continue;
-
-			const bool bAlreadyOnMesh = Mesh->GetMeshOnlySocketList().ContainsByPredicate([SkeletonSocket](const USkeletalMeshSocket* MeshSocket) { return IsValid(MeshSocket) && MeshSocket->SocketName == SkeletonSocket->SocketName; });
-			if (bAlreadyOnMesh) continue;
-
-			Mesh->AddSocket(DuplicateObject<USkeletalMeshSocket>(SkeletonSocket, Mesh));
-		}
-	}
-
-	// 插槽是相对骨骼记录的，骨骼换了名字和朝向：保持插槽在模型空间的位置不变，换算成相对新骨骼的值
+	// 插槽是相对骨骼记录的，骨骼换了名字和朝向：保持插槽在模型空间的位置不变，换算成相对新骨骼的值。
+	// 先处理底自己的插槽，再把来源骨架上的、并入网格上的插槽复制过来；同名的不覆盖
 	for (USkeletalMeshSocket* Socket : Mesh->GetMeshOnlySocketList())
 	{
-		if (!IsValid(Socket)) continue;
+		ConvertSocket(Socket, OldRefSkeleton, Plan.SourceToFinalName, Plan.RefSkeleton, NewGlobals, OutResult);
+	}
+	if (Plan.bCopySkeletonSockets && IsValid(OldSkeleton))
+	{
+		CopySockets(ObjectPtrDecay(OldSkeleton->Sockets), OldRefSkeleton, Plan.SourceToFinalName, Plan.RefSkeleton, NewGlobals, Mesh, OutResult);
+	}
+	for (const FJNSkeletalRefitMergePart& Part : Plan.MergeParts)
+	{
+		const USkeletalMesh* PartMesh = Part.Mesh.Get();
+		if (!IsValid(PartMesh)) continue;
 
-		const int32 OldBoneIndex = OldRefSkeleton.FindRawBoneIndex(Socket->BoneName);
-		const FName* FinalName = Plan.SourceToFinalName.Find(Socket->BoneName);
-		const int32 NewBoneIndex = FinalName != nullptr ? Plan.RefSkeleton.FindRawBoneIndex(*FinalName) : INDEX_NONE;
-		if (OldBoneIndex == INDEX_NONE || NewBoneIndex == INDEX_NONE)
+		CopySockets(PartMesh->GetMeshOnlySocketList(), PartMesh->GetRefSkeleton(), Part.SourceToFinalName, Plan.RefSkeleton, NewGlobals, Mesh, OutResult);
+		if (Plan.bCopySkeletonSockets && IsValid(PartMesh->GetSkeleton()))
 		{
-			OutResult.Warnings.Add(FText::Format(LOCTEXT("SocketBoneMissing", "Socket '{0}' is attached to bone '{1}', which the mesh does not have; it was left as is."), FText::FromName(Socket->SocketName), FText::FromName(Socket->BoneName)));
-			continue;
-		}
-
-		const FTransform SocketGlobal = Socket->GetSocketLocalTransform() * OldGlobals[OldBoneIndex];
-		const FTransform SocketLocal = SocketGlobal.GetRelativeTransform(NewGlobals[NewBoneIndex]);
-		Socket->BoneName = *FinalName;
-		Socket->RelativeLocation = SocketLocal.GetLocation();
-		Socket->RelativeRotation = SocketLocal.Rotator();
-
-		// 插槽与骨骼重名时，引擎按名字查找先取插槽，这里只做提示
-		if (Plan.RefSkeleton.FindRawBoneIndex(Socket->SocketName) != INDEX_NONE)
-		{
-			OutResult.Warnings.Add(FText::Format(LOCTEXT("SocketNameIsBone", "Socket '{0}' has the same name as a bone; lookups by name return the socket."), FText::FromName(Socket->SocketName)));
+			CopySockets(ObjectPtrDecay(PartMesh->GetSkeleton()->Sockets), PartMesh->GetRefSkeleton(), Part.SourceToFinalName, Plan.RefSkeleton, NewGlobals, Mesh, OutResult);
 		}
 	}
 	Mesh->RebuildSocketMap();
@@ -261,24 +333,28 @@ bool UJNSkeletalRefitFunctionLibrary::ApplyPlan(const FJNSkeletalRefitPlan& Plan
 	}
 	Skeleton->MarkPackageDirty();
 
-	if (Mesh->GetMorphTargets().Num() != MorphCountBefore)
+	TSet<FName> ActualMorphNames;
+	CollectMorphTargetNames(Mesh, ActualMorphNames);
+	if (ActualMorphNames.Num() != ExpectedMorphNames.Num())
 	{
-		OutResult.Error = FText::Format(LOCTEXT("MorphMismatch", "Morph target count changed from {0} to {1}."), FText::AsNumber(MorphCountBefore), FText::AsNumber(Mesh->GetMorphTargets().Num()));
+		OutResult.Error = FText::Format(LOCTEXT("MorphMismatch", "Expected {0} morph target(s) after the refit but the mesh has {1}."), FText::AsNumber(ExpectedMorphNames.Num()), FText::AsNumber(ActualMorphNames.Num()));
 		return false;
 	}
 	return true;
 }
 
-USkeletalMesh* UJNSkeletalRefitFunctionLibrary::RefitMesh(const FJNSkeletalRefitSettings& Settings, USkeletalMesh* SourceMesh, const FString& OutputFolder, const FString& OutputSuffix, FJNSkeletalRefitResult& OutResult)
+USkeletalMesh* UJNSkeletalRefitFunctionLibrary::RefitMeshes(const FJNSkeletalRefitSettings& Settings, const TArray<USkeletalMesh*>& SourceMeshes, const FString& OutputFolder, const FString& OutputSuffix, FJNSkeletalRefitResult& OutResult)
 {
 	OutResult = FJNSkeletalRefitResult();
 
 	// 先算方案，方案不成立就不产生任何资产
 	FJNSkeletalRefitPlan Plan;
-	if (!BuildPlan(Settings, SourceMesh, Plan, OutResult)) return nullptr;
+	if (!BuildMergedPlan(Settings, SourceMeshes, Plan, OutResult)) return nullptr;
 
-	const FString PackagePath = OutputFolder.IsEmpty() ? FPackageName::GetLongPackagePath(SourceMesh->GetOutermost()->GetName()) : OutputFolder;
-	const FString AssetName = SourceMesh->GetName() + OutputSuffix;
+	// 导出的网格以第一个网格为底，名字与默认位置也跟它
+	USkeletalMesh* BaseMesh = SourceMeshes[0];
+	const FString PackagePath = OutputFolder.IsEmpty() ? FPackageName::GetLongPackagePath(BaseMesh->GetOutermost()->GetName()) : OutputFolder;
+	const FString AssetName = BaseMesh->GetName() + OutputSuffix;
 	if (FPackageName::DoesPackageExist(PackagePath / AssetName))
 	{
 		OutResult.Error = FText::Format(LOCTEXT("OutputExists", "'{0}' already exists. Delete it or use another suffix."), FText::FromString(PackagePath / AssetName));
@@ -286,19 +362,26 @@ USkeletalMesh* UJNSkeletalRefitFunctionLibrary::RefitMesh(const FJNSkeletalRefit
 	}
 
 	IAssetTools& AssetTools = FAssetToolsModule::GetModule().Get();
-	USkeletalMesh* NewMesh = Cast<USkeletalMesh>(AssetTools.DuplicateAsset(AssetName, PackagePath, SourceMesh));
+	USkeletalMesh* NewMesh = Cast<USkeletalMesh>(AssetTools.DuplicateAsset(AssetName, PackagePath, BaseMesh));
 	if (!IsValid(NewMesh))
 	{
-		OutResult.Error = FText::Format(LOCTEXT("DuplicateFailed", "Failed to duplicate '{0}'."), FText::FromString(SourceMesh->GetName()));
+		OutResult.Error = FText::Format(LOCTEXT("DuplicateFailed", "Failed to duplicate '{0}'."), FText::FromString(BaseMesh->GetName()));
 		return nullptr;
 	}
 
 	// 应用失败时新网格资产留着供检查，不算成功
 	if (!ApplyPlan(Plan, NewMesh, Settings.TargetSkeleton.Get(), OutResult)) return nullptr;
 
-	if (Settings.bRebuildGroomBindings) RebuildGroomBindings(SourceMesh, NewMesh, OutputSuffix, OutResult);
+	// 每个来源网格上的毛发都改绑到导出的这一个网格
+	if (Settings.bRebuildGroomBindings)
+	{
+		for (const USkeletalMesh* SourceMesh : SourceMeshes)
+		{
+			RebuildGroomBindings(SourceMesh, NewMesh, OutputSuffix, OutResult);
+		}
+	}
 
-	UE_LOG(LogJNSkeletalRefit, Log, TEXT("Refitted '%s' to skeleton '%s' as '%s' with %d warning(s)."), *SourceMesh->GetPathName(), *Settings.TargetSkeleton->GetPathName(), *NewMesh->GetPathName(), OutResult.Warnings.Num());
+	UE_LOG(LogJNSkeletalRefit, Log, TEXT("Refitted %d mesh(es) to skeleton '%s' as '%s' with %d warning(s)."), SourceMeshes.Num(), *Settings.TargetSkeleton->GetPathName(), *NewMesh->GetPathName(), OutResult.Warnings.Num());
 	OutResult.bSucceeded = true;
 	return NewMesh;
 }
@@ -317,17 +400,17 @@ USkeleton* UJNSkeletalRefitFunctionLibrary::MakePreviewSkeleton(const FJNSkeleta
 	return PreviewSkeleton;
 }
 
-USkeletalMesh* UJNSkeletalRefitFunctionLibrary::MakePreviewMesh(const FJNSkeletalRefitSettings& Settings, USkeletalMesh* SourceMesh, USkeleton* PreviewSkeleton, FJNSkeletalRefitResult& OutResult)
+USkeletalMesh* UJNSkeletalRefitFunctionLibrary::MakePreviewMesh(const FJNSkeletalRefitSettings& Settings, const TArray<USkeletalMesh*>& SourceMeshes, USkeleton* PreviewSkeleton, FJNSkeletalRefitResult& OutResult)
 {
 	OutResult = FJNSkeletalRefitResult();
 
 	FJNSkeletalRefitPlan Plan;
-	if (!BuildPlan(Settings, SourceMesh, Plan, OutResult)) return nullptr;
+	if (!BuildMergedPlan(Settings, SourceMeshes, Plan, OutResult)) return nullptr;
 
-	USkeletalMesh* PreviewMesh = DuplicateObject<USkeletalMesh>(SourceMesh, GetTransientPackage());
+	USkeletalMesh* PreviewMesh = DuplicateObject<USkeletalMesh>(SourceMeshes[0], GetTransientPackage());
 	if (!IsValid(PreviewMesh))
 	{
-		OutResult.Error = FText::Format(LOCTEXT("PreviewDuplicateFailed", "Failed to duplicate '{0}' for preview."), FText::FromString(SourceMesh->GetName()));
+		OutResult.Error = FText::Format(LOCTEXT("PreviewDuplicateFailed", "Failed to duplicate '{0}' for preview."), FText::FromString(SourceMeshes[0]->GetName()));
 		return nullptr;
 	}
 
@@ -337,6 +420,110 @@ USkeletalMesh* UJNSkeletalRefitFunctionLibrary::MakePreviewMesh(const FJNSkeleta
 
 	OutResult.bSucceeded = true;
 	return PreviewMesh;
+}
+
+void UJNSkeletalRefitFunctionLibrary::CollectMorphTargetNames(const USkeletalMesh* Mesh, TSet<FName>& OutNames)
+{
+	if (!IsValid(Mesh)) return;
+
+	for (const UMorphTarget* MorphTarget : Mesh->GetMorphTargets())
+	{
+		if (IsValid(MorphTarget)) OutNames.Add(MorphTarget->GetFName());
+	}
+}
+
+void UJNSkeletalRefitFunctionLibrary::ConvertSocket(USkeletalMeshSocket* Socket, const FReferenceSkeleton& OldRefSkeleton, const TMap<FName, FName>& SourceToFinalName, const FReferenceSkeleton& NewRefSkeleton, const TArray<FTransform>& NewGlobals, FJNSkeletalRefitResult& OutResult)
+{
+	if (!IsValid(Socket)) return;
+
+	const int32 OldBoneIndex = OldRefSkeleton.FindRawBoneIndex(Socket->BoneName);
+	const FName* FinalName = SourceToFinalName.Find(Socket->BoneName);
+	const int32 NewBoneIndex = FinalName != nullptr ? NewRefSkeleton.FindRawBoneIndex(*FinalName) : INDEX_NONE;
+	if (OldBoneIndex == INDEX_NONE || NewBoneIndex == INDEX_NONE)
+	{
+		OutResult.Warnings.Add(FText::Format(LOCTEXT("SocketBoneMissing", "Socket '{0}' is attached to bone '{1}', which the mesh does not have; it was left as is."), FText::FromName(Socket->SocketName), FText::FromName(Socket->BoneName)));
+		return;
+	}
+
+	TArray<FTransform> OldGlobals;
+	ComputeGlobalPose(OldRefSkeleton, OldGlobals);
+
+	const FTransform SocketGlobal = Socket->GetSocketLocalTransform() * OldGlobals[OldBoneIndex];
+	const FTransform SocketLocal = SocketGlobal.GetRelativeTransform(NewGlobals[NewBoneIndex]);
+	Socket->BoneName = *FinalName;
+	Socket->RelativeLocation = SocketLocal.GetLocation();
+	Socket->RelativeRotation = SocketLocal.Rotator();
+
+	// 插槽与骨骼重名时，引擎按名字查找先取插槽，这里只做提示
+	if (NewRefSkeleton.FindRawBoneIndex(Socket->SocketName) != INDEX_NONE)
+	{
+		OutResult.Warnings.Add(FText::Format(LOCTEXT("SocketNameIsBone", "Socket '{0}' has the same name as a bone; lookups by name return the socket."), FText::FromName(Socket->SocketName)));
+	}
+}
+
+void UJNSkeletalRefitFunctionLibrary::CopySockets(const TArray<USkeletalMeshSocket*>& Sockets, const FReferenceSkeleton& OldRefSkeleton, const TMap<FName, FName>& SourceToFinalName, const FReferenceSkeleton& NewRefSkeleton, const TArray<FTransform>& NewGlobals, USkeletalMesh* Mesh, FJNSkeletalRefitResult& OutResult)
+{
+	for (const USkeletalMeshSocket* SourceSocket : Sockets)
+	{
+		if (!IsValid(SourceSocket)) continue;
+
+		const bool bAlreadyOnMesh = Mesh->GetMeshOnlySocketList().ContainsByPredicate([SourceSocket](const USkeletalMeshSocket* MeshSocket) { return IsValid(MeshSocket) && MeshSocket->SocketName == SourceSocket->SocketName; });
+		if (bAlreadyOnMesh) continue;
+
+		USkeletalMeshSocket* NewSocket = DuplicateObject<USkeletalMeshSocket>(SourceSocket, Mesh);
+		ConvertSocket(NewSocket, OldRefSkeleton, SourceToFinalName, NewRefSkeleton, NewGlobals, OutResult);
+		Mesh->AddSocket(NewSocket);
+	}
+}
+
+void UJNSkeletalRefitFunctionLibrary::AppendPartToMeshDescription(const FJNSkeletalRefitMergePart& Part, const TMap<FName, FName>& SlotNames, const int32 LODIndex, FMeshDescription& MeshDescription, FJNSkeletalRefitResult& OutResult)
+{
+	const USkeletalMesh* PartMesh = Part.Mesh.Get();
+	if (!IsValid(PartMesh)) return;
+
+	FMeshDescription PartDescription;
+	if (!PartMesh->HasMeshDescription(LODIndex) || !PartMesh->CloneMeshDescription(LODIndex, PartDescription))
+	{
+		OutResult.Warnings.Add(FText::Format(LOCTEXT("PartLODMissing", "'{0}' has no source geometry for LOD {1}; it is missing from that LOD of the merged mesh."), FText::FromString(PartMesh->GetName()), FText::AsNumber(LODIndex)));
+		return;
+	}
+
+	// 顶点的蒙皮权重与变形目标按"底的顶点数 + 并入网格的顶点编号"对位，两边的编号都要连续
+	FElementIDRemappings PartRemappings;
+	PartDescription.Compact(PartRemappings);
+	if (MeshDescription.Vertices().GetArraySize() != MeshDescription.Vertices().Num())
+	{
+		FElementIDRemappings BaseRemappings;
+		MeshDescription.Compact(BaseRemappings);
+	}
+
+	// 并入网格的多边形组换成合并后的材质槽名，追加时按槽名各归各的分段
+	FStaticMeshAttributes PartAttributes(PartDescription);
+	TPolygonGroupAttributesRef<FName> PartSlotNames = PartAttributes.GetPolygonGroupMaterialSlotNames();
+	for (const FPolygonGroupID PolygonGroupID : PartDescription.PolygonGroups().GetElementIDs())
+	{
+		const FName* NewSlotName = SlotNames.Find(PartSlotNames[PolygonGroupID]);
+		if (NewSlotName != nullptr) PartSlotNames[PolygonGroupID] = *NewSlotName;
+	}
+
+	const int32 VertexOffset = MeshDescription.Vertices().Num();
+	FStaticMeshOperations::FAppendSettings AppendSettings;
+	for (bool& bMergeUVChannel : AppendSettings.bMergeUVChannels)
+	{
+		bMergeUVChannel = true;
+	}
+	FStaticMeshOperations::AppendMeshDescription(PartDescription, MeshDescription, AppendSettings);
+
+	// 蒙皮权重换成合并后的骨骼下标；顶点上的自定义属性一并带过来，变形目标的位移就存在其中
+	FSkeletalMeshOperations::FSkeletalMeshAppendSettings SkinSettings;
+	SkinSettings.SourceVertexIDOffset = VertexOffset;
+	SkinSettings.bAppendVertexAttributes = true;
+	SkinSettings.SourceRemapBoneIndex.Reserve(Part.SourceToNewIndex.Num());
+	for (const int32 NewBoneIndex : Part.SourceToNewIndex)
+	{
+		SkinSettings.SourceRemapBoneIndex.Add(static_cast<FBoneIndexType>(NewBoneIndex));
+	}
+	FSkeletalMeshOperations::AppendSkinWeight(PartDescription, MeshDescription, SkinSettings);
 }
 
 void UJNSkeletalRefitFunctionLibrary::CollectWeightedBones(const USkeletalMesh* Mesh, TSet<int32>& OutWeightedBones)

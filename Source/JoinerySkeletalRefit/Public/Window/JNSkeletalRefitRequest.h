@@ -19,7 +19,10 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Skeletal Refit", meta = (ShowOnlyInnerProperties))
 	FJNSkeletalRefitSettings Settings;
 
-	/** 要转换的网格。身体与头这类分开的网格放在一起转换，身体放第一个：预览时第一个网格播放动画，其余跟随它。 */
+	/**
+	 * 要转换的网格，导出时合成一个。只放身体就只导出身体，头之后还可以单独换；
+	 * 把头也放进来就并进同一个网格，之后不能单独换。第一个是底，新网格的名字、布料与物理资产都跟它。
+	 */
 	UPROPERTY(EditAnywhere, Category = "Skeletal Refit")
 	TArray<TObjectPtr<USkeletalMesh>> Meshes;
 

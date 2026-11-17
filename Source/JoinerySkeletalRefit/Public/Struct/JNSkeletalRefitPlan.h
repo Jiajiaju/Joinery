@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "ReferenceSkeleton.h"
+#include "Struct/JNSkeletalRefitMergePart.h"
 
 class USkeleton;
 
@@ -22,6 +23,9 @@ struct FJNSkeletalRefitPlan
 
 	/** 转换设置里的目标骨架。预览时网格指向的是它的临时副本，判断资产是否属于目标骨架要用这个。 */
 	TWeakObjectPtr<USkeleton> TargetSkeleton;
+
+	/** 合并导出时并进这个网格的其他来源网格；只转换一个网格时为空。它们多出来的骨骼已经补进 RefSkeleton。 */
+	TArray<FJNSkeletalRefitMergePart> MergeParts;
 
 	/** 是否把来源骨架上的插槽复制成新网格自己的插槽。 */
 	bool bCopySkeletonSockets = true;

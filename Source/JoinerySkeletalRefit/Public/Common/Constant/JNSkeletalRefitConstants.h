@@ -35,6 +35,9 @@ namespace JNSkeletalRefitConstants
 	/** 第二参考方向与主方向夹角余弦的绝对值上限，超过视为共线、不用来定扭转。 */
 	inline constexpr double MaxSecondaryCollinearity = 0.95;
 
+	/** 并入网格的材质槽名与已有槽名重复时，在槽名后面接上这个分隔符与并入网格的名字。 */
+	inline constexpr const TCHAR* MergedSlotSeparator = TEXT("_");
+
 	/** 窗口内各控件之间的间距（Slate 单位）。 */
 	inline constexpr float WindowPadding = 4.0f;
 

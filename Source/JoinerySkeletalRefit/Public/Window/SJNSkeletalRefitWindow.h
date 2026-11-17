@@ -8,6 +8,8 @@ class FUICommandList;
 class IDetailsView;
 class SJNSkeletalRefitViewport;
 class UJNSkeletalRefitRequest;
+class USkeletalMesh;
+struct FJNSkeletalRefitResult;
 struct FPropertyChangedEvent;
 struct FSlateBrush;
 
@@ -50,6 +52,12 @@ public:
 private:
 	FText GetResultText() const;
 
+	/** 请求里有效且不重复的网格，按列表顺序；第一个是导出时的底。 */
+	TArray<USkeletalMesh*> CollectSourceMeshes() const;
+
+	/** 把一次预览或导出的结果写成给人看的文字：先是一句结论，再是失败原因与各条提示。 */
+	static FText DescribeResult(const FJNSkeletalRefitResult& Result, const FText& Headline);
+
 	/** 建一个带图标的按钮。 */
 	TSharedRef<SWidget> MakeButton(const FSlateBrush* Icon, const FText& Label, const FText& ToolTip, FReply (SJNSkeletalRefitWindow::*Handler)());
 
@@ -68,6 +76,6 @@ private:
 	/** 手动重做一次预览。 */
 	FReply HandlePreviewClicked();
 
-	/** 逐个转换请求里的网格，生成新的网格资产，并汇总结果。 */
+	/** 把请求里的网格转换并合成一个新的网格资产。 */
 	FReply HandleExportClicked();
 };

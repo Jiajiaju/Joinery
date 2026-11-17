@@ -33,6 +33,7 @@ public class JoinerySkeletalRefit : ModuleRules
 				"SkeletalMeshDescription",
 				"Slate",
 				"SlateCore",
+				"StaticMeshDescription",
 				"StatusBar",
 				"ToolMenus",
 				"UnrealEd"

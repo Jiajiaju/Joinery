@@ -232,15 +232,14 @@ void SJNSkeletalRefitWindow::RefreshPreview()
 
 	// 设置还没填全时清空视口
 	TArray<USkeletalMesh*> PreviewMeshes;
-	const bool bHasMesh = Request->Meshes.ContainsByPredicate([](const TObjectPtr<USkeletalMesh>& Mesh) { return IsValid(Mesh); });
-	if (!IsValid(Request->Settings.TargetSkeleton) || !bHasMesh)
+	const TArray<USkeletalMesh*> SourceMeshes = CollectSourceMeshes();
+	if (!IsValid(Request->Settings.TargetSkeleton) || SourceMeshes.IsEmpty())
 	{
 		Viewport->SetPreviewMeshes(PreviewMeshes, nullptr);
 		ResultText = LOCTEXT("NeedsInput", "Pick a target skeleton and at least one mesh first.");
 		return;
 	}
 
-	// 同批网格共用一份临时骨架，各自追加的骨骼都并进它
 	USkeleton* PreviewSkeleton = UJNSkeletalRefitFunctionLibrary::MakePreviewSkeleton(Request->Settings);
 	if (!IsValid(PreviewSkeleton))
 	{
@@ -249,32 +248,39 @@ void SJNSkeletalRefitWindow::RefreshPreview()
 		return;
 	}
 
-	FTextBuilder Builder;
-	for (USkeletalMesh* Mesh : Request->Meshes)
-	{
-		if (!IsValid(Mesh)) continue;
-
-		FJNSkeletalRefitResult Result;
-		USkeletalMesh* PreviewMesh = UJNSkeletalRefitFunctionLibrary::MakePreviewMesh(Request->Settings, Mesh, PreviewSkeleton, Result);
-		if (Result.bSucceeded && IsValid(PreviewMesh))
-		{
-			PreviewMeshes.Add(PreviewMesh);
-			Builder.AppendLineFormat(LOCTEXT("PreviewSucceeded", "{0}: preview ready."), FText::FromString(Mesh->GetName()));
-		}
-		else
-		{
-			Builder.AppendLineFormat(LOCTEXT("PreviewFailed", "{0}: preview failed. {1}"), FText::FromString(Mesh->GetName()), Result.Error);
-		}
-
-		for (const FText& Warning : Result.Warnings)
-		{
-			Builder.AppendLineFormat(LOCTEXT("PreviewWarning", "    Warning: {0}"), Warning);
-		}
-	}
+	// 预览与导出用同一个方案：列表里的网格合成一个
+	FJNSkeletalRefitResult Result;
+	USkeletalMesh* PreviewMesh = UJNSkeletalRefitFunctionLibrary::MakePreviewMesh(Request->Settings, SourceMeshes, PreviewSkeleton, Result);
+	if (Result.bSucceeded && IsValid(PreviewMesh)) PreviewMeshes.Add(PreviewMesh);
 
 	Viewport->SetShowBones(Request->bShowBones);
 	Viewport->SetPreviewMeshes(PreviewMeshes, Request->PreviewAnimation);
-	ResultText = Builder.ToText();
+	ResultText = DescribeResult(Result, PreviewMeshes.IsEmpty() ? LOCTEXT("PreviewFailed", "Preview failed.") : FText::Format(LOCTEXT("PreviewSucceeded", "Preview ready: {0} mesh(es) in one."), FText::AsNumber(SourceMeshes.Num())));
+}
+
+TArray<USkeletalMesh*> SJNSkeletalRefitWindow::CollectSourceMeshes() const
+{
+	TArray<USkeletalMesh*> SourceMeshes;
+	if (!IsValid(Request)) return SourceMeshes;
+
+	for (USkeletalMesh* Mesh : Request->Meshes)
+	{
+		if (IsValid(Mesh)) SourceMeshes.AddUnique(Mesh);
+	}
+	return SourceMeshes;
+}
+
+FText SJNSkeletalRefitWindow::DescribeResult(const FJNSkeletalRefitResult& Result, const FText& Headline)
+{
+	FTextBuilder Builder;
+	Builder.AppendLine(Headline);
+	if (!Result.Error.IsEmpty()) Builder.AppendLine(Result.Error);
+
+	for (const FText& Warning : Result.Warnings)
+	{
+		Builder.AppendLineFormat(LOCTEXT("ResultWarning", "    Note: {0}"), Warning);
+	}
+	return Builder.ToText();
 }
 
 FReply SJNSkeletalRefitWindow::HandleResetBonesClicked()
@@ -304,29 +310,17 @@ FReply SJNSkeletalRefitWindow::HandleExportClicked()
 		return FReply::Handled();
 	}
 
-	FTextBuilder Builder;
-	for (USkeletalMesh* Mesh : Request->Meshes)
+	const TArray<USkeletalMesh*> SourceMeshes = CollectSourceMeshes();
+	if (SourceMeshes.IsEmpty())
 	{
-		if (!IsValid(Mesh)) continue;
-
-		FJNSkeletalRefitResult Result;
-		const USkeletalMesh* NewMesh = UJNSkeletalRefitFunctionLibrary::RefitMesh(Request->Settings, Mesh, Request->OutputFolder.Path, Request->OutputSuffix, Result);
-		if (Result.bSucceeded && IsValid(NewMesh))
-		{
-			Builder.AppendLineFormat(LOCTEXT("ExportSucceeded", "{0}: exported as {1}. Save the new mesh and the target skeleton."), FText::FromString(Mesh->GetName()), FText::FromString(NewMesh->GetPathName()));
-		}
-		else
-		{
-			Builder.AppendLineFormat(LOCTEXT("ExportFailed", "{0}: failed. {1}"), FText::FromString(Mesh->GetName()), Result.Error);
-		}
-
-		for (const FText& Warning : Result.Warnings)
-		{
-			Builder.AppendLineFormat(LOCTEXT("ExportWarning", "    Warning: {0}"), Warning);
-		}
+		ResultText = LOCTEXT("NeedsInput", "Pick a target skeleton and at least one mesh first.");
+		return FReply::Handled();
 	}
 
-	ResultText = Builder.ToText();
+	FJNSkeletalRefitResult Result;
+	const USkeletalMesh* NewMesh = UJNSkeletalRefitFunctionLibrary::RefitMeshes(Request->Settings, SourceMeshes, Request->OutputFolder.Path, Request->OutputSuffix, Result);
+	const bool bExported = Result.bSucceeded && IsValid(NewMesh);
+	ResultText = DescribeResult(Result, bExported ? FText::Format(LOCTEXT("ExportSucceeded", "Exported {0} mesh(es) as {1}. Save the new mesh and the target skeleton."), FText::AsNumber(SourceMeshes.Num()), FText::FromString(NewMesh->GetPathName())) : LOCTEXT("ExportFailed", "Export failed."));
 	return FReply::Handled();
 }
 
