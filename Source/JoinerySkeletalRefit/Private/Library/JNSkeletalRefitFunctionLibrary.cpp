@@ -594,10 +594,20 @@ bool UJNSkeletalRefitFunctionLibrary::BuildBonePlan(const FJNSkeletalRefitSettin
 
 		const FName SourceBone = Source.GetBoneName(SourceIndex);
 		const FName NewName = Entry.NewName.IsNone() ? FName(*(Settings.AppendPrefix + SourceBone.ToString())) : Entry.NewName;
-		if (NewNames.Contains(NewName))
+		// 目标骨架上已经有这个名字：同批的另一个网格或上一次导出已经把它追加进去了，沿用那根骨骼，位置仍取本网格的。
+		// 那根骨骼若已被别的来源骨骼占用，才是真的重名
+		const int32 ExistingIndex = NewNames.IndexOfByKey(NewName);
+		if (ExistingIndex != INDEX_NONE)
 		{
-			OutResult.Error = FText::Format(LOCTEXT("AppendNameTaken", "Bone '{0}' cannot be appended as '{1}': the name is already used."), FText::FromName(SourceBone), FText::FromName(NewName));
-			return false;
+			if (OutPlan.SourceToNewIndex.Contains(ExistingIndex))
+			{
+				OutResult.Error = FText::Format(LOCTEXT("AppendNameTaken", "Bone '{0}' cannot be appended as '{1}': the name is already used by another bone of this mesh."), FText::FromName(SourceBone), FText::FromName(NewName));
+				return false;
+			}
+
+			OutPlan.SourceToNewIndex[SourceIndex] = ExistingIndex;
+			NewGlobals[ExistingIndex] = SourceGlobals[SourceIndex];
+			continue;
 		}
 
 		int32 NewParentIndex = Entry.TargetBone.IsNone() ? FindResolvedAncestor(Source, OutPlan.SourceToNewIndex, SourceIndex) : NewNames.IndexOfByKey(Entry.TargetBone);
