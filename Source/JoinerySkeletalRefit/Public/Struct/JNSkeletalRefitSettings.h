@@ -34,6 +34,14 @@ struct JOINERYSKELETALREFIT_API FJNSkeletalRefitSettings
 	UPROPERTY(EditAnywhere, Category = "Bones", meta = (TitleProperty = "SourceBone"))
 	TArray<FJNBoneRefitEntry> Bones;
 
+	/** 把来源骨架上的插槽复制成新网格自己的插槽，位置保持不变。关掉时只保留来源网格自己的插槽。 */
+	UPROPERTY(EditAnywhere, Category = "Options")
+	bool bCopySkeletonSockets = true;
+
+	/** 导出时为指向来源网格的毛发 Binding 各建一份指向新网格的副本并重建。只在导出时做，预览不做。 */
+	UPROPERTY(EditAnywhere, Category = "Options")
+	bool bRebuildGroomBindings = true;
+
 	/** 取某根来源骨骼的行，没有时返回空。 */
 	const FJNBoneRefitEntry* FindEntry(const FName SourceBone) const;
 };

@@ -18,9 +18,13 @@ public class JoinerySkeletalRefit : ModuleRules
 			{
 				"AnimationCore",
 				"AdvancedPreviewScene",
+				"AssetRegistry",
 				"AssetTools",
+				"ClothingSystemRuntimeCommon",
+				"ClothingSystemRuntimeInterface",
 				"CoreUObject",
 				"Engine",
+				"HairStrandsCore",
 				"InputCore",
 				"JoineryCore",
 				"MeshDescription",

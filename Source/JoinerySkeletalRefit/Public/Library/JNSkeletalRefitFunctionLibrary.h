@@ -6,6 +6,7 @@
 #include "JNSkeletalRefitFunctionLibrary.generated.h"
 
 struct FJNSkeletalRefitSettings;
+class UPhysicsAsset;
 class USkeletalMesh;
 class USkeleton;
 struct FJNSkeletalRefitPlan;
@@ -76,6 +77,12 @@ private:
 
 	/** 由来源骨骼层级与带权重的骨骼，按骨骼处理表算出转换后的骨骼层级与权重去向。 */
 	static bool BuildBonePlan(const FJNSkeletalRefitSettings& Settings, const FReferenceSkeleton& Source, const TSet<int32>& WeightedBones, FJNSkeletalRefitPlan& OutPlan, FJNSkeletalRefitResult& OutResult);
+
+	/** 物理资产用到的骨骼在这套骨骼层级里是否都在。 */
+	static bool IsPhysicsAssetCompatible(const UPhysicsAsset* PhysicsAsset, const FReferenceSkeleton& RefSkeleton);
+
+	/** 找出目标网格是来源网格的毛发 Binding，各复制一份指向新网格并重建；做了什么记在 OutResult 的提示里。 */
+	static void RebuildGroomBindings(const USkeletalMesh* SourceMesh, USkeletalMesh* NewMesh, const FString& OutputSuffix, FJNSkeletalRefitResult& OutResult);
 
 	/** 把骨骼方案写进一份网格描述：替换骨骼表，并按去向转移各权重配置里的权重。 */
 	static void ApplyPlanToMeshDescription(const FJNSkeletalRefitPlan& Plan, FMeshDescription& MeshDescription);

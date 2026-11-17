@@ -1,22 +1,29 @@
 #include "Library/JNSkeletalRefitFunctionLibrary.h"
 
+#include "Animation/AnimBlueprintGeneratedClass.h"
+#include "Animation/AnimInstance.h"
 #include "Animation/Skeleton.h"
-#include "Struct/JNSkeletalRefitSettings.h"
+#include "AssetRegistry/AssetData.h"
+#include "AssetRegistry/IAssetRegistry.h"
 #include "AssetToolsModule.h"
 #include "BoneWeights.h"
+#include "ClothingAsset.h"
 #include "Common/Constant/JNSkeletalRefitConstants.h"
 #include "Engine/SkeletalMesh.h"
 #include "Engine/SkeletalMeshSocket.h"
+#include "GroomBindingAsset.h"
 #include "IAssetTools.h"
 #include "JNSkeletalRefitLog.h"
 #include "MeshDescription.h"
 #include "Misc/PackageName.h"
 #include "PhysicsEngine/PhysicsAsset.h"
+#include "PhysicsEngine/SkeletalBodySetup.h"
 #include "ReferenceSkeleton.h"
 #include "RenderingThread.h"
 #include "SkeletalMeshAttributes.h"
 #include "Struct/JNSkeletalRefitPlan.h"
 #include "Struct/JNSkeletalRefitResult.h"
+#include "Struct/JNSkeletalRefitSettings.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(JNSkeletalRefitFunctionLibrary)
 
@@ -65,7 +72,64 @@ bool UJNSkeletalRefitFunctionLibrary::BuildPlan(const FJNSkeletalRefitSettings& 
 
 	TSet<int32> WeightedBones;
 	CollectWeightedBones(SourceMesh, WeightedBones);
+	OutPlan.TargetSkeleton = Settings.TargetSkeleton;
+	OutPlan.bCopySkeletonSockets = Settings.bCopySkeletonSockets;
 	return BuildBonePlan(Settings, SourceMesh->GetRefSkeleton(), WeightedBones, OutPlan, OutResult);
+}
+
+void UJNSkeletalRefitFunctionLibrary::RebuildGroomBindings(const USkeletalMesh* SourceMesh, USkeletalMesh* NewMesh, const FString& OutputSuffix, FJNSkeletalRefitResult& OutResult)
+{
+	if (!IsValid(SourceMesh) || !IsValid(NewMesh)) return;
+
+	// 找出目标网格是来源网格的毛发 Binding，各复制一份指向新网格并重建
+	const IAssetRegistry& AssetRegistry = IAssetRegistry::GetChecked();
+	TArray<FName> ReferencerPackages;
+	AssetRegistry.GetReferencers(SourceMesh->GetOutermost()->GetFName(), ReferencerPackages);
+
+	IAssetTools& AssetTools = FAssetToolsModule::GetModule().Get();
+	for (const FName ReferencerPackage : ReferencerPackages)
+	{
+		TArray<FAssetData> ReferencerAssets;
+		AssetRegistry.GetAssetsByPackageName(ReferencerPackage, ReferencerAssets);
+		for (const FAssetData& ReferencerAsset : ReferencerAssets)
+		{
+			if (ReferencerAsset.AssetClassPath != UGroomBindingAsset::StaticClass()->GetClassPathName()) continue;
+
+			UGroomBindingAsset* Binding = Cast<UGroomBindingAsset>(ReferencerAsset.GetAsset());
+			if (!IsValid(Binding) || Binding->GetTargetSkeletalMesh() != SourceMesh) continue;
+
+			const FString PackagePath = FPackageName::GetLongPackagePath(Binding->GetOutermost()->GetName());
+			const FString AssetName = Binding->GetName() + OutputSuffix;
+			if (FPackageName::DoesPackageExist(PackagePath / AssetName))
+			{
+				OutResult.Warnings.Add(FText::Format(LOCTEXT("GroomBindingExists", "Groom binding '{0}' already exists and was left as is."), FText::FromString(PackagePath / AssetName)));
+				continue;
+			}
+
+			UGroomBindingAsset* NewBinding = Cast<UGroomBindingAsset>(AssetTools.DuplicateAsset(AssetName, PackagePath, Binding));
+			if (!IsValid(NewBinding))
+			{
+				OutResult.Warnings.Add(FText::Format(LOCTEXT("GroomBindingFailed", "Failed to duplicate groom binding '{0}'. Rebuild it for the refitted mesh by hand."), FText::FromString(Binding->GetName())));
+				continue;
+			}
+
+			NewBinding->SetTargetSkeletalMesh(NewMesh);
+			NewBinding->Build();
+			NewBinding->MarkPackageDirty();
+			OutResult.Warnings.Add(FText::Format(LOCTEXT("GroomBindingRebuilt", "Groom binding '{0}' was created for the refitted mesh. Use it in place of '{1}'."), FText::FromString(NewBinding->GetName()), FText::FromString(Binding->GetName())));
+		}
+	}
+}
+
+bool UJNSkeletalRefitFunctionLibrary::IsPhysicsAssetCompatible(const UPhysicsAsset* PhysicsAsset, const FReferenceSkeleton& RefSkeleton)
+{
+	if (!IsValid(PhysicsAsset)) return false;
+
+	for (const USkeletalBodySetup* BodySetup : PhysicsAsset->SkeletalBodySetups)
+	{
+		if (IsValid(BodySetup) && RefSkeleton.FindRawBoneIndex(BodySetup->BoneName) == INDEX_NONE) return false;
+	}
+	return true;
 }
 
 bool UJNSkeletalRefitFunctionLibrary::ApplyPlan(const FJNSkeletalRefitPlan& Plan, USkeletalMesh* Mesh, USkeleton* Skeleton, FJNSkeletalRefitResult& OutResult)
@@ -78,12 +142,42 @@ bool UJNSkeletalRefitFunctionLibrary::ApplyPlan(const FJNSkeletalRefitPlan& Plan
 
 	const int32 MorphCountBefore = Mesh->GetMorphTargets().Num();
 
+	// 换骨骼之前先记下旧层级的模型空间姿态与旧骨架，插槽的相对位置要靠它们换算
+	const FReferenceSkeleton OldRefSkeleton = Mesh->GetRefSkeleton();
+	const USkeleton* OldSkeleton = Mesh->GetSkeleton();
+	TArray<FTransform> OldGlobals;
+	TArray<FTransform> NewGlobals;
+	ComputeGlobalPose(OldRefSkeleton, OldGlobals);
+	ComputeGlobalPose(Plan.RefSkeleton, NewGlobals);
+
 	// 换骨骼层级并重算绑定：顶点不动，只有骨骼的静止姿态变了
 	FlushRenderingCommands();
 	Mesh->Modify();
 	Mesh->SetRefSkeleton(Plan.RefSkeleton);
 	Mesh->GetRefBasesInvMatrix().Reset();
 	Mesh->CalculateInvRefMatrices();
+
+	// 布料数据内嵌在网格里，按名字记着用到的骨骼并缓存了下标：名字跟着处理表改，下标按新层级重建
+	for (UClothingAssetBase* ClothingAsset : Mesh->GetMeshClothingAssets())
+	{
+		UClothingAssetCommon* Cloth = Cast<UClothingAssetCommon>(ClothingAsset);
+		if (!IsValid(Cloth)) continue;
+
+		for (FName& UsedBoneName : Cloth->UsedBoneNames)
+		{
+			const FName* FinalName = Plan.SourceToFinalName.Find(UsedBoneName);
+			if (FinalName != nullptr) UsedBoneName = *FinalName;
+		}
+		Cloth->RefreshBoneMapping(Mesh);
+		Cloth->CalculateReferenceBoneIndex();
+		Cloth->InvalidateAllCachedData();
+
+		if (IsValid(Cloth->PhysicsAsset) && !IsPhysicsAssetCompatible(Cloth->PhysicsAsset, Plan.RefSkeleton))
+		{
+			OutResult.Warnings.Add(FText::Format(LOCTEXT("ClothCollisionCleared", "Cloth '{0}': its collision physics asset '{1}' uses bones that were renamed or not kept, so it was cleared."), FText::FromString(Cloth->GetName()), FText::FromString(Cloth->PhysicsAsset->GetName())));
+			Cloth->PhysicsAsset = nullptr;
+		}
+	}
 
 	for (int32 LODIndex = 0; LODIndex < Mesh->GetLODNum(); ++LODIndex)
 	{
@@ -98,31 +192,61 @@ bool UJNSkeletalRefitFunctionLibrary::ApplyPlan(const FJNSkeletalRefitPlan& Plan
 		Mesh->CommitMeshDescription(LODIndex);
 	}
 
-	// 网格自己的插槽跟着骨骼改名；挂在已不保留的骨骼上的插槽留给人工处理
+	// 来源骨架上的插槽不跟网格走，复制成网格自己的插槽；网格上已有同名插槽的不覆盖
+	if (Plan.bCopySkeletonSockets && IsValid(OldSkeleton))
+	{
+		for (const USkeletalMeshSocket* SkeletonSocket : OldSkeleton->Sockets)
+		{
+			if (!IsValid(SkeletonSocket)) continue;
+
+			const bool bAlreadyOnMesh = Mesh->GetMeshOnlySocketList().ContainsByPredicate([SkeletonSocket](const USkeletalMeshSocket* MeshSocket) { return IsValid(MeshSocket) && MeshSocket->SocketName == SkeletonSocket->SocketName; });
+			if (bAlreadyOnMesh) continue;
+
+			Mesh->AddSocket(DuplicateObject<USkeletalMeshSocket>(SkeletonSocket, Mesh));
+		}
+	}
+
+	// 插槽是相对骨骼记录的，骨骼换了名字和朝向：保持插槽在模型空间的位置不变，换算成相对新骨骼的值
 	for (USkeletalMeshSocket* Socket : Mesh->GetMeshOnlySocketList())
 	{
 		if (!IsValid(Socket)) continue;
 
-		const FName* NewBoneName = Plan.SourceToNewName.Find(Socket->BoneName);
-		if (NewBoneName != nullptr)
+		const int32 OldBoneIndex = OldRefSkeleton.FindRawBoneIndex(Socket->BoneName);
+		const FName* FinalName = Plan.SourceToFinalName.Find(Socket->BoneName);
+		const int32 NewBoneIndex = FinalName != nullptr ? Plan.RefSkeleton.FindRawBoneIndex(*FinalName) : INDEX_NONE;
+		if (OldBoneIndex == INDEX_NONE || NewBoneIndex == INDEX_NONE)
 		{
-			Socket->BoneName = *NewBoneName;
+			OutResult.Warnings.Add(FText::Format(LOCTEXT("SocketBoneMissing", "Socket '{0}' is attached to bone '{1}', which the mesh does not have; it was left as is."), FText::FromName(Socket->SocketName), FText::FromName(Socket->BoneName)));
 			continue;
 		}
 
-		OutResult.Warnings.Add(FText::Format(LOCTEXT("SocketBoneRemoved", "Socket '{0}' is attached to bone '{1}', which was not kept."), FText::FromName(Socket->SocketName), FText::FromName(Socket->BoneName)));
+		const FTransform SocketGlobal = Socket->GetSocketLocalTransform() * OldGlobals[OldBoneIndex];
+		const FTransform SocketLocal = SocketGlobal.GetRelativeTransform(NewGlobals[NewBoneIndex]);
+		Socket->BoneName = *FinalName;
+		Socket->RelativeLocation = SocketLocal.GetLocation();
+		Socket->RelativeRotation = SocketLocal.Rotator();
+
+		// 插槽与骨骼重名时，引擎按名字查找先取插槽，这里只做提示
+		if (Plan.RefSkeleton.FindRawBoneIndex(Socket->SocketName) != INDEX_NONE)
+		{
+			OutResult.Warnings.Add(FText::Format(LOCTEXT("SocketNameIsBone", "Socket '{0}' has the same name as a bone; lookups by name return the socket."), FText::FromName(Socket->SocketName)));
+		}
+	}
+	Mesh->RebuildSocketMap();
+
+	// 物理资产按骨骼名引用：用到的骨骼都还在就沿用，否则清掉
+	if (IsValid(Mesh->GetPhysicsAsset()) && !IsPhysicsAssetCompatible(Mesh->GetPhysicsAsset(), Plan.RefSkeleton))
+	{
+		OutResult.Warnings.Add(FText::Format(LOCTEXT("PhysicsAssetCleared", "The physics asset '{0}' uses bones that were renamed or not kept, so it was cleared. Create one for the refitted mesh."), FText::FromString(Mesh->GetPhysicsAsset()->GetName())));
+		Mesh->SetPhysicsAsset(nullptr);
 	}
 
-	// 物理资产与后处理动画蓝图是按来源骨架做的，不能带过来
-	if (IsValid(Mesh->GetPhysicsAsset()))
-	{
-		Mesh->SetPhysicsAsset(nullptr);
-		OutResult.Warnings.Add(LOCTEXT("PhysicsAssetCleared", "The physics asset was cleared. Create one for the refitted mesh."));
-	}
-	if (Mesh->GetPostProcessAnimBlueprint() != nullptr)
+	// 后处理动画蓝图绑定在骨架上：本来就是目标骨架的才留
+	const UAnimBlueprintGeneratedClass* PostProcessClass = Cast<UAnimBlueprintGeneratedClass>(Mesh->GetPostProcessAnimBlueprint().Get());
+	if (Mesh->GetPostProcessAnimBlueprint() != nullptr && (PostProcessClass == nullptr || PostProcessClass->TargetSkeleton != Plan.TargetSkeleton.Get()))
 	{
 		Mesh->SetPostProcessAnimBlueprint(nullptr);
-		OutResult.Warnings.Add(LOCTEXT("PostProcessCleared", "The post process anim blueprint was cleared. Assign one made for the target skeleton."));
+		OutResult.Warnings.Add(LOCTEXT("PostProcessCleared", "The post process anim blueprint was made for another skeleton, so it was cleared. Assign one made for the target skeleton."));
 	}
 
 	Skeleton->Modify();
@@ -171,6 +295,8 @@ USkeletalMesh* UJNSkeletalRefitFunctionLibrary::RefitMesh(const FJNSkeletalRefit
 
 	// 应用失败时新网格资产留着供检查，不算成功
 	if (!ApplyPlan(Plan, NewMesh, Settings.TargetSkeleton.Get(), OutResult)) return nullptr;
+
+	if (Settings.bRebuildGroomBindings) RebuildGroomBindings(SourceMesh, NewMesh, OutputSuffix, OutResult);
 
 	UE_LOG(LogJNSkeletalRefit, Log, TEXT("Refitted '%s' to skeleton '%s' as '%s' with %d warning(s)."), *SourceMesh->GetPathName(), *Settings.TargetSkeleton->GetPathName(), *NewMesh->GetPathName(), OutResult.Warnings.Num());
 	OutResult.bSucceeded = true;
@@ -421,7 +547,7 @@ bool UJNSkeletalRefitFunctionLibrary::BuildBonePlan(const FJNSkeletalRefitSettin
 	TargetToNewIndex.Init(INDEX_NONE, TargetBoneCount);
 	Alignments.Init(FQuat::Identity, TargetBoneCount);
 	OutPlan.SourceToNewIndex.Init(INDEX_NONE, SourceBoneCount);
-	OutPlan.SourceToNewName.Reset();
+	OutPlan.SourceToFinalName.Reset();
 	for (int32 TargetIndex = 0; TargetIndex < TargetBoneCount; ++TargetIndex)
 	{
 		if (!IncludedTargets[TargetIndex]) continue;
@@ -438,7 +564,6 @@ bool UJNSkeletalRefitFunctionLibrary::BuildBonePlan(const FJNSkeletalRefitSettin
 			NewGlobal = FTransform((Alignments[TargetIndex] * TargetGlobals[TargetIndex].GetRotation()).GetNormalized(), SourceGlobals[SourceIndex].GetLocation());
 
 			OutPlan.SourceToNewIndex[SourceIndex] = NewNames.Num();
-			OutPlan.SourceToNewName.Add(Source.GetBoneName(SourceIndex), Target.GetBoneName(TargetIndex));
 		}
 		else
 		{
@@ -484,7 +609,6 @@ bool UJNSkeletalRefitFunctionLibrary::BuildBonePlan(const FJNSkeletalRefitSettin
 		if (NewParentIndex == INDEX_NONE) NewParentIndex = JNSkeletalRefitConstants::RootBoneIndex;
 
 		OutPlan.SourceToNewIndex[SourceIndex] = NewNames.Num();
-		OutPlan.SourceToNewName.Add(SourceBone, NewName);
 		NewNames.Add(NewName);
 		NewParents.Add(NewParentIndex);
 		NewGlobals.Add(SourceGlobals[SourceIndex]);
@@ -511,6 +635,12 @@ bool UJNSkeletalRefitFunctionLibrary::BuildBonePlan(const FJNSkeletalRefitSettin
 		{
 			OutResult.Warnings.Add(FText::Format(LOCTEXT("DiscardedWeighted", "Discarded bone '{0}' has skin weights; they were moved to '{1}'."), FText::FromName(SourceBone), FText::FromName(NewNames[NewIndex])));
 		}
+	}
+
+	// 每根来源骨骼最终落到的新骨骼名：保留的是自己的新名字，不保留的是权重去向的骨骼
+	for (int32 SourceIndex = 0; SourceIndex < SourceBoneCount; ++SourceIndex)
+	{
+		OutPlan.SourceToFinalName.Add(Source.GetBoneName(SourceIndex), NewNames[OutPlan.SourceToNewIndex[SourceIndex]]);
 	}
 
 	// 由模型空间姿态换回各骨骼相对父骨骼的姿态，建出新层级
