@@ -180,9 +180,23 @@ void SJNSkeletalRefitWindow::HandleRequestChanged(const FPropertyChangedEvent& P
 {
 	if (!IsValid(Request)) return;
 
-	// 换了目标骨架，同名规则的结果全变，整表重来；网格变了只补缺的行
 	const FName PropertyName = PropertyChangedEvent.GetPropertyName();
 	const FName MemberName = PropertyChangedEvent.GetMemberPropertyName();
+
+	// 只影响显示或输出位置的选项不用重新转换
+	if (MemberName == GET_MEMBER_NAME_CHECKED(UJNSkeletalRefitRequest, bShowBones))
+	{
+		if (Viewport.IsValid()) Viewport->SetShowBones(Request->bShowBones);
+		return;
+	}
+	if (MemberName == GET_MEMBER_NAME_CHECKED(UJNSkeletalRefitRequest, PreviewAnimation))
+	{
+		if (Viewport.IsValid()) Viewport->SetPreviewAnimation(Request->PreviewAnimation);
+		return;
+	}
+	if (MemberName == GET_MEMBER_NAME_CHECKED(UJNSkeletalRefitRequest, OutputFolder) || MemberName == GET_MEMBER_NAME_CHECKED(UJNSkeletalRefitRequest, OutputSuffix)) return;
+
+	// 换了目标骨架，同名规则的结果全变，整表重来；网格变了只补缺的行
 	if (PropertyName == GET_MEMBER_NAME_CHECKED(FJNSkeletalRefitSettings, TargetSkeleton))
 	{
 		FillBones(true);
@@ -192,40 +206,34 @@ void SJNSkeletalRefitWindow::HandleRequestChanged(const FPropertyChangedEvent& P
 		FillBones(false);
 	}
 
-	if (Viewport.IsValid()) Viewport->SetShowBones(Request->bShowBones);
+	// 其余都是会改变转换结果的设置，预览跟着重做
+	RefreshPreview();
 }
 
-FReply SJNSkeletalRefitWindow::HandleResetBonesClicked()
+void SJNSkeletalRefitWindow::RefreshPreview()
 {
-	if (!IsValid(Request) || !IsValid(Request->Settings.TargetSkeleton) || Request->Meshes.IsEmpty())
-	{
-		ResultText = LOCTEXT("NeedsInput", "Pick a target skeleton and at least one mesh first.");
-		return FReply::Handled();
-	}
+	if (!IsValid(Request) || !Viewport.IsValid()) return;
 
-	FillBones(true);
-	ResultText = FText::Format(LOCTEXT("ResetBonesDone", "Rebuilt the bone list: {0} row(s)."), FText::AsNumber(Request->Settings.Bones.Num()));
-	return FReply::Handled();
-}
-
-FReply SJNSkeletalRefitWindow::HandlePreviewClicked()
-{
-	if (!IsValid(Request) || !IsValid(Request->Settings.TargetSkeleton) || Request->Meshes.IsEmpty() || !Viewport.IsValid())
+	// 设置还没填全时清空视口
+	TArray<USkeletalMesh*> PreviewMeshes;
+	const bool bHasMesh = Request->Meshes.ContainsByPredicate([](const TObjectPtr<USkeletalMesh>& Mesh) { return IsValid(Mesh); });
+	if (!IsValid(Request->Settings.TargetSkeleton) || !bHasMesh)
 	{
+		Viewport->SetPreviewMeshes(PreviewMeshes, nullptr);
 		ResultText = LOCTEXT("NeedsInput", "Pick a target skeleton and at least one mesh first.");
-		return FReply::Handled();
+		return;
 	}
 
 	// 同批网格共用一份临时骨架，各自追加的骨骼都并进它
 	USkeleton* PreviewSkeleton = UJNSkeletalRefitFunctionLibrary::MakePreviewSkeleton(Request->Settings);
 	if (!IsValid(PreviewSkeleton))
 	{
+		Viewport->SetPreviewMeshes(PreviewMeshes, nullptr);
 		ResultText = LOCTEXT("PreviewSkeletonFailed", "Failed to prepare the preview skeleton.");
-		return FReply::Handled();
+		return;
 	}
 
 	FTextBuilder Builder;
-	TArray<USkeletalMesh*> PreviewMeshes;
 	for (USkeletalMesh* Mesh : Request->Meshes)
 	{
 		if (!IsValid(Mesh)) continue;
@@ -251,6 +259,24 @@ FReply SJNSkeletalRefitWindow::HandlePreviewClicked()
 	Viewport->SetShowBones(Request->bShowBones);
 	Viewport->SetPreviewMeshes(PreviewMeshes, Request->PreviewAnimation);
 	ResultText = Builder.ToText();
+}
+
+FReply SJNSkeletalRefitWindow::HandleResetBonesClicked()
+{
+	if (!IsValid(Request) || !IsValid(Request->Settings.TargetSkeleton) || Request->Meshes.IsEmpty())
+	{
+		ResultText = LOCTEXT("NeedsInput", "Pick a target skeleton and at least one mesh first.");
+		return FReply::Handled();
+	}
+
+	FillBones(true);
+	RefreshPreview();
+	return FReply::Handled();
+}
+
+FReply SJNSkeletalRefitWindow::HandlePreviewClicked()
+{
+	RefreshPreview();
 	return FReply::Handled();
 }
 

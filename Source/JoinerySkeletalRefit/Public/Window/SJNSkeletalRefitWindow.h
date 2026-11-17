@@ -47,13 +47,16 @@ private:
 	/** 按自动规则给骨骼处理表补上各网格里还没有列出的骨骼；bReset 为真时先清空，丢掉手改的行。 */
 	void FillBones(const bool bReset);
 
-	/** 请求里的属性改了：目标骨架或网格变了就补骨骼处理表，并把骨骼显示开关同步给视口。 */
+	/** 请求里的属性改了：会改变转换结果的设置变了就补骨骼处理表并重做预览，动画与骨骼显示只同步给视口。 */
 	void HandleRequestChanged(const FPropertyChangedEvent& PropertyChangedEvent);
+
+	/** 按当前设置临时转换请求里的网格并显示在视口里，不产生资产；设置没填全时清空视口。 */
+	void RefreshPreview();
 
 	/** 按自动规则重新生成骨骼处理表。 */
 	FReply HandleResetBonesClicked();
 
-	/** 按当前设置临时转换请求里的网格并显示在视口里，不产生资产。 */
+	/** 手动重做一次预览。 */
 	FReply HandlePreviewClicked();
 
 	/** 逐个转换请求里的网格，生成新的网格资产，并汇总结果。 */

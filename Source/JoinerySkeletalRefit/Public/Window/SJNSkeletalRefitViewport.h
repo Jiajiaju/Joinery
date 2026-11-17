@@ -53,6 +53,9 @@ public:
 	/** 换成显示这些网格，并在第一个网格上循环播放动画；动画为空时保持静止姿态。 */
 	void SetPreviewMeshes(const TArray<USkeletalMesh*>& Meshes, UAnimationAsset* Animation);
 
+	/** 不重建网格，只换第一个网格上循环播放的动画；动画为空时回到静止姿态。 */
+	void SetPreviewAnimation(UAnimationAsset* Animation);
+
 	void SetShowBones(const bool bShowBones);
 
 protected:

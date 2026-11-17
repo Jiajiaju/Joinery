@@ -106,6 +106,16 @@ void SJNSkeletalRefitViewport::SetPreviewMeshes(const TArray<USkeletalMesh*>& Me
 	ViewportClient->Invalidate();
 }
 
+void SJNSkeletalRefitViewport::SetPreviewAnimation(UAnimationAsset* Animation)
+{
+	if (MeshComponents.IsEmpty()) return;
+
+	// 动画为空时回到静止姿态
+	USkeletalMeshComponent* LeaderComponent = MeshComponents[0].Get();
+	if (IsValid(LeaderComponent)) LeaderComponent->PlayAnimation(Animation, true);
+	if (ViewportClient.IsValid()) ViewportClient->Invalidate();
+}
+
 void SJNSkeletalRefitViewport::SetShowBones(const bool bShowBones)
 {
 	if (ViewportClient.IsValid()) ViewportClient->SetShowBones(bShowBones);
