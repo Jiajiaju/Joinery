@@ -1,10 +1,10 @@
 #include "Customization/JNBoneRefitEntryCustomization.h"
 
 #include "Common/Constant/JNSkeletalRefitConstants.h"
-#include "Common/Constant/JNWorkbenchConstants.h"
+#include "Common/Constant/JNCoreConstants.h"
 #include "DetailWidgetRow.h"
 #include "IDetailChildrenBuilder.h"
-#include "JNWorkbenchStyle.h"
+#include "JNCoreStyle.h"
 #include "PropertyHandle.h"
 #include "Struct/JNBoneRefitEntry.h"
 #include "Widgets/Images/SImage.h"
@@ -73,19 +73,19 @@ const FSlateBrush* FJNBoneRefitEntryCustomization::GetActionBrush() const
 	{
 		case EJNBoneRefitAction::Map:
 		{
-			return FJNWorkbenchStyle::GetBrush(JNWorkbenchConstants::MapIconName);
+			return FJNCoreStyle::GetBrush(JNCoreConstants::MapIconName);
 		}
 		case EJNBoneRefitAction::Append:
 		{
-			return FJNWorkbenchStyle::GetBrush(JNWorkbenchConstants::AppendIconName);
+			return FJNCoreStyle::GetBrush(JNCoreConstants::AppendIconName);
 		}
 		case EJNBoneRefitAction::Merge:
 		{
-			return FJNWorkbenchStyle::GetBrush(JNWorkbenchConstants::MergeIconName);
+			return FJNCoreStyle::GetBrush(JNCoreConstants::MergeIconName);
 		}
 		case EJNBoneRefitAction::Discard:
 		{
-			return FJNWorkbenchStyle::GetBrush(JNWorkbenchConstants::DiscardIconName);
+			return FJNCoreStyle::GetBrush(JNCoreConstants::DiscardIconName);
 		}
 		default:
 		{

@@ -18,13 +18,13 @@ namespace JNSkeletalRefitConstants
 	inline const FName BoneRefitEntryStructName(TEXT("JNBoneRefitEntry"));
 
 	/** 新建对应表资产的默认名。 */
-	inline constexpr const TCHAR* NewJigAssetName = TEXT("JIG_NewSkeletalRefit");
+	inline constexpr const TCHAR* NewProfileAssetName = TEXT("SRP_NewSkeletalRefit");
 
 	/** 转换后网格名在来源网格名后追加的默认后缀。 */
 	inline constexpr const TCHAR* DefaultOutputSuffix = TEXT("_Refit");
 
 	/** 对应表资产在内容浏览器里的颜色。 */
-	inline const FLinearColor JigAssetColor(0.72f, 0.52f, 0.30f);
+	inline const FLinearColor ProfileAssetColor(0.72f, 0.52f, 0.30f);
 
 	/** 读取骨骼与权重所用的 LOD。 */
 	inline constexpr int32 SourceLODIndex = 0;
@@ -40,6 +40,16 @@ namespace JNSkeletalRefitConstants
 
 	/** 窗口内各控件之间的间距（Slate 单位）。 */
 	inline constexpr float WindowPadding = 4.0f;
+
+	/** 窗口左侧参数区占整个窗口宽度的比例，其余给预览视口。 */
+	inline constexpr float WindowParameterRatio = 0.4f;
+
+	/** 窗口左侧结果文字区的最大高度（Slate 单位）。 */
+	inline constexpr float ResultMaxHeight = 160.0f;
+
+	/** 预览视口里骨骼连线的颜色与屏幕空间线宽。 */
+	inline const FLinearColor PreviewBoneColor(1.0f, 0.85f, 0.2f);
+	inline constexpr float PreviewBoneThickness = 1.0f;
 
 	/** 对应表行首图标与骨骼名之间的间距（Slate 单位）。 */
 	inline constexpr float EntryIconPadding = 4.0f;

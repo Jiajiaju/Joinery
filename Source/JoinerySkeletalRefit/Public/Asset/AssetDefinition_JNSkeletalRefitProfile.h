@@ -2,11 +2,11 @@
 
 #include "CoreMinimal.h"
 #include "AssetDefinitionDefault.h"
-#include "AssetDefinition_JNSkeletalRefitJig.generated.h"
+#include "AssetDefinition_JNSkeletalRefitProfile.generated.h"
 
-/** Skeletal Refit 对应表在内容浏览器里的类型定义：显示为 Skeletal Refit Jig，归在 Joinery 分类下。 */
+/** Skeletal Refit 对应表在内容浏览器里的类型定义：显示为 Skeletal Refit Profile，归在 Joinery 分类下。 */
 UCLASS()
-class UAssetDefinition_JNSkeletalRefitJig : public UAssetDefinitionDefault
+class UAssetDefinition_JNSkeletalRefitProfile : public UAssetDefinitionDefault
 {
 	GENERATED_BODY()
 

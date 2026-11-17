@@ -5,9 +5,9 @@
 
 /**
  * Joinery 的公共模块：登记共用图标，并在关卡编辑器主菜单栏上建 Joinery 菜单。
- * 各工具模块依赖本模块，把自己的入口加进 JNWorkbenchConstants::JoineryMenuName。
+ * 各工具模块依赖本模块，把自己的入口加进 JNCoreConstants::JoineryMenuName。
  */
-class FJoineryWorkbenchModule : public IModuleInterface
+class FJoineryCoreModule : public IModuleInterface
 {
 public:
 	//~ Begin IModuleInterface Interface.

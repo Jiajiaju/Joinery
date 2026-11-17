@@ -3,7 +3,7 @@
 #include "CoreMinimal.h"
 
 /** Joinery 各工具共用的固定约定：插件名、样式名、主菜单名、图标名与图标尺寸。 */
-namespace JNWorkbenchConstants
+namespace JNCoreConstants
 {
 	/** 插件名，用来定位插件 Resources 目录。 */
 	inline constexpr const TCHAR* PluginName = TEXT("Joinery");
@@ -13,7 +13,7 @@ namespace JNWorkbenchConstants
 	inline constexpr const TCHAR* IconsDirectoryName = TEXT("Icons");
 	inline constexpr const TCHAR* IconFileExtension = TEXT(".svg");
 
-	inline const FName StyleName(TEXT("JNWorkbenchStyle"));
+	inline const FName StyleName(TEXT("JNCoreStyle"));
 
 	/** 关卡编辑器主菜单栏，以及挂在它上面的 Joinery 菜单。各工具把自己的入口加进 Joinery 菜单。 */
 	inline const FName LevelEditorMainMenuName(TEXT("LevelEditor.MainMenu"));
@@ -22,7 +22,7 @@ namespace JNWorkbenchConstants
 	inline const FName JoineryToolsSectionName(TEXT("JoineryTools"));
 
 	/** 向 ToolMenus 登记菜单时用的所有者名，模块关闭时据此注销。 */
-	inline const FName MenuOwnerName(TEXT("JoineryWorkbench"));
+	inline const FName MenuOwnerName(TEXT("JoineryCore"));
 
 	inline const FVector2f Icon16(16.0f, 16.0f);
 	inline const FVector2f Icon64(64.0f, 64.0f);
@@ -30,8 +30,8 @@ namespace JNWorkbenchConstants
 	/** 图标名，对应 Resources/Icons 下的同名 SVG。 */
 	inline const FName JoineryIconName(TEXT("Joinery.Joinery"));
 	inline const FName SkeletalRefitIconName(TEXT("Joinery.SkeletalRefit"));
-	inline const FName JigIconName(TEXT("Joinery.Jig"));
-	inline const FName JigThumbnailName(TEXT("Joinery.JigThumbnail"));
+	inline const FName ProfileIconName(TEXT("Joinery.Profile"));
+	inline const FName ProfileThumbnailName(TEXT("Joinery.ProfileThumbnail"));
 	inline const FName MapIconName(TEXT("Joinery.Map"));
 	inline const FName AppendIconName(TEXT("Joinery.Append"));
 	inline const FName MergeIconName(TEXT("Joinery.Merge"));
@@ -41,7 +41,7 @@ namespace JNWorkbenchConstants
 
 	inline constexpr const TCHAR* JoineryIconFile = TEXT("JNJoinery_16");
 	inline constexpr const TCHAR* SkeletalRefitIconFile = TEXT("JNSkeletalRefit_16");
-	inline constexpr const TCHAR* JigIconFile = TEXT("JNJig_16");
+	inline constexpr const TCHAR* ProfileIconFile = TEXT("JNProfile_16");
 	inline constexpr const TCHAR* MapIconFile = TEXT("JNMap_16");
 	inline constexpr const TCHAR* AppendIconFile = TEXT("JNAppend_16");
 	inline constexpr const TCHAR* MergeIconFile = TEXT("JNMerge_16");

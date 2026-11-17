@@ -8,9 +8,9 @@ struct FSlateBrush;
 
 /**
  * Joinery 的 Slate 样式：插件各工具共用的一套图标。
- * 图片是插件 Resources/Icons 目录下的 SVG，图标名见 JNWorkbenchConstants。
+ * 图片是插件 Resources/Icons 目录下的 SVG，图标名见 JNCoreConstants。
  */
-class JOINERYWORKBENCH_API FJNWorkbenchStyle
+class JOINERYCORE_API FJNCoreStyle
 {
 private:
 	static TSharedPtr<FSlateStyleSet> StyleSet;

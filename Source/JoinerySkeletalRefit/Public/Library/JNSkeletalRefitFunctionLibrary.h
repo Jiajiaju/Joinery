@@ -5,8 +5,9 @@
 #include "Struct/JNBoneRefitEntry.h"
 #include "JNSkeletalRefitFunctionLibrary.generated.h"
 
-class UJNSkeletalRefitJig;
+class UJNSkeletalRefitProfile;
 class USkeletalMesh;
+class USkeleton;
 struct FJNSkeletalRefitPlan;
 struct FJNSkeletalRefitResult;
 struct FMeshDescription;
@@ -26,7 +27,7 @@ public:
 	 * 按自动规则给对应表补上网格里还没有列出的骨骼，已有的行不动。
 	 * @return 新增的行数。
 	 */
-	static int32 AutoFillJig(UJNSkeletalRefitJig* Jig, const USkeletalMesh* Mesh);
+	static int32 AutoFillProfile(UJNSkeletalRefitProfile* Profile, const USkeletalMesh* Mesh);
 
 	/**
 	 * 复制来源网格并把副本转换到对应表的目标骨架，来源网格不动。新资产与目标骨架只标脏，不保存。
@@ -34,7 +35,22 @@ public:
 	 * @param OutputSuffix 新网格名在来源网格名后追加的后缀。
 	 * @return 转换后的网格，失败时为空，原因在 OutResult。
 	 */
-	static USkeletalMesh* RefitMesh(const UJNSkeletalRefitJig* Jig, USkeletalMesh* SourceMesh, const FString& OutputFolder, const FString& OutputSuffix, FJNSkeletalRefitResult& OutResult);
+	static USkeletalMesh* RefitMesh(const UJNSkeletalRefitProfile* Profile, USkeletalMesh* SourceMesh, const FString& OutputFolder, const FString& OutputSuffix, FJNSkeletalRefitResult& OutResult);
+
+	/** 按对应表算出来源网格转换后的骨骼层级与权重去向，不改任何资产。 */
+	static bool BuildPlan(const UJNSkeletalRefitProfile* Profile, const USkeletalMesh* SourceMesh, FJNSkeletalRefitPlan& OutPlan, FJNSkeletalRefitResult& OutResult);
+
+	/**
+	 * 把骨骼方案就地应用到一个网格：换骨骼层级、重算绑定、转移权重，然后把网格指到 Skeleton 并把骨骼并进它。
+	 * 正式转换与预览共用：正式转换传网格副本与目标骨架，预览传临时网格与临时骨架。
+	 */
+	static bool ApplyPlan(const FJNSkeletalRefitPlan& Plan, USkeletalMesh* Mesh, USkeleton* Skeleton, FJNSkeletalRefitResult& OutResult);
+
+	/** 建一份预览用的临时骨架：目标骨架的副本，与目标骨架兼容，不存盘。预览里追加的骨骼写进它，目标骨架不动。 */
+	static USkeleton* MakePreviewSkeleton(const UJNSkeletalRefitProfile* Profile);
+
+	/** 建一个预览用的临时网格：来源网格的副本按对应表转换到预览骨架，不存盘。失败时为空，原因在 OutResult。 */
+	static USkeletalMesh* MakePreviewMesh(const UJNSkeletalRefitProfile* Profile, USkeletalMesh* SourceMesh, USkeleton* PreviewSkeleton, FJNSkeletalRefitResult& OutResult);
 
 private:
 	/** 收集网格里真正带权重的骨骼下标。 */
@@ -58,8 +74,8 @@ private:
 	 */
 	static FQuat ComputeAlignment(const FReferenceSkeleton& Target, const TArray<FTransform>& TargetGlobals, const TArray<FTransform>& SourceGlobals, const TArray<int32>& MappedSourceOfTarget, const int32 TargetIndex, const FQuat& ParentAlignment);
 
-	/** 按对应表算出转换后的骨骼层级与权重去向。 */
-	static bool BuildPlan(const UJNSkeletalRefitJig* Jig, const FReferenceSkeleton& Source, const TSet<int32>& WeightedBones, FJNSkeletalRefitPlan& OutPlan, FJNSkeletalRefitResult& OutResult);
+	/** 由来源骨骼层级与带权重的骨骼，按对应表算出转换后的骨骼层级与权重去向。 */
+	static bool BuildBonePlan(const UJNSkeletalRefitProfile* Profile, const FReferenceSkeleton& Source, const TSet<int32>& WeightedBones, FJNSkeletalRefitPlan& OutPlan, FJNSkeletalRefitResult& OutResult);
 
 	/** 把骨骼方案写进一份网格描述：替换骨骼表，并按去向转移各权重配置里的权重。 */
 	static void ApplyPlanToMeshDescription(const FJNSkeletalRefitPlan& Plan, FMeshDescription& MeshDescription);

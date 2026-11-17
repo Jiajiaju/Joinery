@@ -1,8 +1,8 @@
 using UnrealBuildTool;
 
-public class JoineryWorkbench : ModuleRules
+public class JoineryCore : ModuleRules
 {
-	public JoineryWorkbench(ReadOnlyTargetRules Target) : base(Target)
+	public JoineryCore(ReadOnlyTargetRules Target) : base(Target)
 	{
 		PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
 

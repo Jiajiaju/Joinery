@@ -18,11 +18,12 @@ public class JoinerySkeletalRefit : ModuleRules
 			{
 				"AnimationCore",
 				"AssetDefinition",
+				"AdvancedPreviewScene",
 				"AssetTools",
 				"CoreUObject",
 				"Engine",
 				"InputCore",
-				"JoineryWorkbench",
+				"JoineryCore",
 				"MeshDescription",
 				"PropertyEditor",
 				"RenderCore",

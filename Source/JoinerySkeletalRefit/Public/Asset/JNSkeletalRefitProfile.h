@@ -3,7 +3,7 @@
 #include "CoreMinimal.h"
 #include "Struct/JNBoneRefitEntry.h"
 #include "UObject/Object.h"
-#include "JNSkeletalRefitJig.generated.h"
+#include "JNSkeletalRefitProfile.generated.h"
 
 class USkeleton;
 
@@ -13,7 +13,7 @@ class USkeleton;
  * 目标骨架上有同名骨骼则对应过去，否则带权重的追加、不带权重的丢弃。
  */
 UCLASS(BlueprintType)
-class JOINERYSKELETALREFIT_API UJNSkeletalRefitJig : public UObject
+class JOINERYSKELETALREFIT_API UJNSkeletalRefitProfile : public UObject
 {
 	GENERATED_BODY()
 

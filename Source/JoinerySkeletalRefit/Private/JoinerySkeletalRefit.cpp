@@ -1,11 +1,11 @@
 #include "JoinerySkeletalRefit.h"
 
 #include "Common/Constant/JNSkeletalRefitConstants.h"
-#include "Common/Constant/JNWorkbenchConstants.h"
+#include "Common/Constant/JNCoreConstants.h"
 #include "Customization/JNBoneRefitEntryCustomization.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Framework/Docking/TabManager.h"
-#include "JNWorkbenchStyle.h"
+#include "JNCoreStyle.h"
 #include "Modules/ModuleManager.h"
 #include "PropertyEditorModule.h"
 #include "Textures/SlateIcon.h"
@@ -20,7 +20,7 @@ void FJoinerySkeletalRefitModule::StartupModule()
 	FGlobalTabmanager::Get()->RegisterNomadTabSpawner(JNSkeletalRefitConstants::WindowTabName, FOnSpawnTab::CreateRaw(this, &FJoinerySkeletalRefitModule::SpawnWindowTab))
 		.SetDisplayName(LOCTEXT("WindowTitle", "Skeletal Refit"))
 		.SetTooltipText(LOCTEXT("WindowToolTip", "Rebind skeletal meshes from any humanoid skeleton to a target skeleton."))
-		.SetIcon(FSlateIcon(FJNWorkbenchStyle::GetStyleSetName(), JNWorkbenchConstants::SkeletalRefitIconName))
+		.SetIcon(FSlateIcon(FJNCoreStyle::GetStyleSetName(), JNCoreConstants::SkeletalRefitIconName))
 		.SetMenuType(ETabSpawnerMenuType::Hidden);
 
 	FPropertyEditorModule& PropertyEditorModule = FModuleManager::LoadModuleChecked<FPropertyEditorModule>(JNSkeletalRefitConstants::PropertyEditorModuleName);
@@ -42,16 +42,16 @@ void FJoinerySkeletalRefitModule::ShutdownModule()
 
 void FJoinerySkeletalRefitModule::RegisterMenus()
 {
-	UToolMenu* JoineryMenu = UToolMenus::Get()->ExtendMenu(JNWorkbenchConstants::JoineryMenuName);
+	UToolMenu* JoineryMenu = UToolMenus::Get()->ExtendMenu(JNCoreConstants::JoineryMenuName);
 	if (!IsValid(JoineryMenu)) return;
 
 	const FToolMenuOwnerScoped OwnerScoped(JNSkeletalRefitConstants::MenuOwnerName);
-	FToolMenuSection& Section = JoineryMenu->FindOrAddSection(JNWorkbenchConstants::JoineryToolsSectionName);
+	FToolMenuSection& Section = JoineryMenu->FindOrAddSection(JNCoreConstants::JoineryToolsSectionName);
 	Section.AddMenuEntry(
 		JNSkeletalRefitConstants::MenuEntryName,
 		LOCTEXT("MenuEntryLabel", "Skeletal Refit"),
 		LOCTEXT("MenuEntryToolTip", "Rebind skeletal meshes from any humanoid skeleton to a target skeleton."),
-		FSlateIcon(FJNWorkbenchStyle::GetStyleSetName(), JNWorkbenchConstants::SkeletalRefitIconName),
+		FSlateIcon(FJNCoreStyle::GetStyleSetName(), JNCoreConstants::SkeletalRefitIconName),
 		FUIAction(FExecuteAction::CreateRaw(this, &FJoinerySkeletalRefitModule::OpenWindow)));
 }
 

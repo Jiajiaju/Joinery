@@ -8,10 +8,10 @@
 
 | 模块 | 作用 |
 |---|---|
-| `JoineryWorkbench` | 公共模块：共用图标与样式集、主菜单栏上的 Joinery 菜单 |
+| `JoineryCore` | 公共模块：共用图标与样式集、主菜单栏上的 Joinery 菜单 |
 | `JoinerySkeletalRefit` | Skeletal Refit：把蒙在任意人形骨架上的网格重新绑定到目标骨架 |
 
-新增工具时一个工具一个模块，依赖 `JoineryWorkbench`，把入口加进 `JNWorkbenchConstants::JoineryMenuName`。
+新增工具时一个工具一个模块，依赖 `JoineryCore`，把入口加进 `JNCoreConstants::JoineryMenuName`。
 
 ## Skeletal Refit
 
@@ -19,9 +19,9 @@
 
 转换只重建骨骼层级、重算绑定并转移权重，顶点与变形目标不动。来源网格不会被修改，转换结果是一个新的网格资产。
 
-### 对应表（Skeletal Refit Jig）
+### 对应表（Skeletal Refit Profile）
 
-内容浏览器里新建：Joinery 分类下的 Skeletal Refit Jig。一种来源骨架配一份，同来源的网格反复使用。
+内容浏览器里新建：Joinery 分类下的 Skeletal Refit Profile。一种来源骨架配一份，同来源的网格反复使用。
 
 | 字段 | 含义 |
 |---|---|
@@ -43,11 +43,21 @@
 
 ### 使用步骤
 
-1. 新建一份 Skeletal Refit Jig，填 Target Skeleton。
-2. 打开 Joinery > Skeletal Refit，选这份 Jig，把要转换的网格加进 Meshes。共用骨骼的网格（比如身体与头）放在一起转换。
-3. 点 Auto Fill Jig，按同名自动填表；然后在 Jig 资产里检查并修改对不上的行。
-4. 点 Refit。每个网格生成一个带后缀的新网格，结果与警告显示在窗口下方。
-5. 检查无误后保存新网格与目标骨架。
+1. 新建一份 Skeletal Refit Profile，填 Target Skeleton。
+2. 打开 Joinery > Skeletal Refit，选这份 Profile，把要转换的网格加进 Meshes。共用骨骼的网格（比如身体与头）放在一起转换。
+3. 点 Auto Fill Profile，按同名自动填表；然后在 Profile 资产里检查并修改对不上的行。
+4. 点 Preview，在右边的视口里看转换结果；改了 Profile 之后再点一次刷新。
+5. 点 Refit。每个网格生成一个带后缀的新网格，结果与警告显示在窗口左下方。
+6. 检查无误后保存新网格与目标骨架。
+
+### 预览
+
+Preview 按当前 Profile 临时转换列表里的所有网格并显示在视口里，不产生资产，也不修改目标骨架。
+
+- 同批网格一起显示：列表里第一个网格播放动画，其余网格跟随它的姿态。身体与头分开的角色，把身体放在第一个。
+- Preview Animation 选一个目标骨架上的动画，用来看变形；留空时保持静止姿态。
+- Show Bones 开关骨骼连线，只画第一个网格的骨骼。
+- 预览用的是目标骨架的一份临时副本，追加的骨骼只写进这份副本。
 
 ### 转换规则
 
@@ -66,4 +76,4 @@
 
 ## 图标
 
-`Resources/Icons` 下的 SVG，16×16 网格、单色实心，由 `FJNWorkbenchStyle` 登记，图标名见 `JNWorkbenchConstants`。
+`Resources/Icons` 下的 SVG，16×16 网格、单色实心，由 `FJNCoreStyle` 登记，图标名见 `JNCoreConstants`。
