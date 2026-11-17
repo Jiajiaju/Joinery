@@ -103,25 +103,32 @@ void UJNSkeletalRefitFunctionLibrary::RebuildGroomBindings(const USkeletalMesh* 
 			UGroomBindingAsset* Binding = Cast<UGroomBindingAsset>(ReferencerAsset.GetAsset());
 			if (!IsValid(Binding) || Binding->GetTargetSkeletalMesh() != SourceMesh) continue;
 
+			// 名字已经带后缀的是上一次导出生成的副本，不是来源，不再给它生成副本的副本
+			if (!OutputSuffix.IsEmpty() && Binding->GetName().EndsWith(OutputSuffix)) continue;
+
+			// 上一次导出留下的同名副本直接沿用，改指到这次的新网格并重建；没有才复制一份
 			const FString PackagePath = FPackageName::GetLongPackagePath(Binding->GetOutermost()->GetName());
 			const FString AssetName = Binding->GetName() + OutputSuffix;
+			const FString ObjectPath = PackagePath / AssetName + TEXT(".") + AssetName;
+			UGroomBindingAsset* NewBinding = nullptr;
 			if (FPackageName::DoesPackageExist(PackagePath / AssetName))
 			{
-				OutResult.Warnings.Add(FText::Format(LOCTEXT("GroomBindingExists", "Groom binding '{0}' already exists and was left as is."), FText::FromString(PackagePath / AssetName)));
-				continue;
+				NewBinding = LoadObject<UGroomBindingAsset>(nullptr, *ObjectPath);
 			}
-
-			UGroomBindingAsset* NewBinding = Cast<UGroomBindingAsset>(AssetTools.DuplicateAsset(AssetName, PackagePath, Binding));
+			else
+			{
+				NewBinding = Cast<UGroomBindingAsset>(AssetTools.DuplicateAsset(AssetName, PackagePath, Binding));
+			}
 			if (!IsValid(NewBinding))
 			{
-				OutResult.Warnings.Add(FText::Format(LOCTEXT("GroomBindingFailed", "Failed to duplicate groom binding '{0}'. Rebuild it for the refitted mesh by hand."), FText::FromString(Binding->GetName())));
+				OutResult.Warnings.Add(FText::Format(LOCTEXT("GroomBindingFailed", "Failed to create groom binding '{0}'. Rebuild the binding for the refitted mesh by hand."), FText::FromString(PackagePath / AssetName)));
 				continue;
 			}
 
 			NewBinding->SetTargetSkeletalMesh(NewMesh);
 			NewBinding->Build();
 			NewBinding->MarkPackageDirty();
-			OutResult.Warnings.Add(FText::Format(LOCTEXT("GroomBindingRebuilt", "Groom binding '{0}' was created for the refitted mesh. Use it in place of '{1}'."), FText::FromString(NewBinding->GetName()), FText::FromString(Binding->GetName())));
+			OutResult.Warnings.Add(FText::Format(LOCTEXT("GroomBindingRebuilt", "Groom binding '{0}' now targets the refitted mesh. Use it in place of '{1}'."), FText::FromString(NewBinding->GetName()), FText::FromString(Binding->GetName())));
 		}
 	}
 }
