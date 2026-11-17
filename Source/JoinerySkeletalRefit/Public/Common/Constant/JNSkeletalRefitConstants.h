@@ -5,6 +5,9 @@
 /** Skeletal Refit 的固定约定：菜单与标签页名、默认命名、几何容差。 */
 namespace JNSkeletalRefitConstants
 {
+	/** 转换窗口标签页底部状态栏的名字，内容抽屉挂在它上面。 */
+	inline const FName StatusBarName(TEXT("JoinerySkeletalRefit.StatusBar"));
+
 	/** 转换窗口的标签页名。 */
 	inline const FName WindowTabName(TEXT("JoinerySkeletalRefit"));
 

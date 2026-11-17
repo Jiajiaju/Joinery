@@ -4,6 +4,7 @@
 #include "UObject/GCObject.h"
 #include "Widgets/SCompoundWidget.h"
 
+class FUICommandList;
 class IDetailsView;
 class SJNSkeletalRefitViewport;
 class UJNSkeletalRefitRequest;
@@ -27,6 +28,9 @@ private:
 	/** 上一次操作的结果文字。 */
 	FText ResultText;
 
+	/** 引擎的全局编辑器快捷键（打开内容抽屉、打开资产等），焦点在本窗口里时由本窗口处理。 */
+	TSharedPtr<FUICommandList> GlobalCommands;
+
 public:
 	SLATE_BEGIN_ARGS(SJNSkeletalRefitWindow) {}
 	SLATE_END_ARGS()
@@ -37,6 +41,11 @@ public:
 	virtual void AddReferencedObjects(FReferenceCollector& Collector) override;
 	virtual FString GetReferencerName() const override;
 	//~ End FGCObject Interface.
+
+	//~ Begin SWidget Interface.
+	virtual bool SupportsKeyboardFocus() const override { return true; }
+	virtual FReply OnKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent) override;
+	//~ End SWidget Interface.
 
 private:
 	FText GetResultText() const;

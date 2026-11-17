@@ -5,12 +5,14 @@
 #include "Common/Constant/JNCoreConstants.h"
 #include "Common/Constant/JNSkeletalRefitConstants.h"
 #include "Engine/SkeletalMesh.h"
+#include "Framework/Commands/UICommandList.h"
 #include "IDetailsView.h"
 #include "JNCoreStyle.h"
 #include "Library/JNSkeletalRefitFunctionLibrary.h"
 #include "Modules/ModuleManager.h"
 #include "PropertyEditorModule.h"
 #include "Struct/JNSkeletalRefitResult.h"
+#include "Toolkits/GlobalEditorCommonCommands.h"
 #include "Widgets/Images/SImage.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Layout/SScrollBox.h"
@@ -34,6 +36,10 @@ void SJNSkeletalRefitWindow::Construct(const FArguments& InArgs)
 	DetailsView = PropertyEditorModule.CreateDetailView(DetailsViewArgs);
 	DetailsView->SetObject(Request);
 	DetailsView->OnFinishedChangingProperties().AddSP(this, &SJNSkeletalRefitWindow::HandleRequestChanged);
+
+	TSharedRef<FUICommandList> Commands = MakeShared<FUICommandList>();
+	FGlobalEditorCommonCommands::MapActions(Commands);
+	GlobalCommands = Commands;
 
 	ChildSlot
 	[
@@ -112,6 +118,16 @@ void SJNSkeletalRefitWindow::Construct(const FArguments& InArgs)
 			SAssignNew(Viewport, SJNSkeletalRefitViewport)
 		]
 	];
+}
+
+FReply SJNSkeletalRefitWindow::OnKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent)
+{
+	if (!GlobalCommands.IsValid()) return SCompoundWidget::OnKeyDown(MyGeometry, InKeyEvent);
+
+	const bool bHandled = GlobalCommands->ProcessCommandBindings(InKeyEvent);
+	if (bHandled) return FReply::Handled();
+
+	return SCompoundWidget::OnKeyDown(MyGeometry, InKeyEvent);
 }
 
 void SJNSkeletalRefitWindow::AddReferencedObjects(FReferenceCollector& Collector)

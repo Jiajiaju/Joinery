@@ -3,14 +3,17 @@
 #include "Common/Constant/JNSkeletalRefitConstants.h"
 #include "Common/Constant/JNCoreConstants.h"
 #include "Customization/JNBoneRefitEntryCustomization.h"
+#include "Editor.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Framework/Docking/TabManager.h"
 #include "JNCoreStyle.h"
 #include "Modules/ModuleManager.h"
 #include "PropertyEditorModule.h"
+#include "StatusBarSubsystem.h"
 #include "Textures/SlateIcon.h"
 #include "ToolMenus.h"
 #include "Widgets/Docking/SDockTab.h"
+#include "Widgets/SBoxPanel.h"
 #include "Window/SJNSkeletalRefitWindow.h"
 
 #define LOCTEXT_NAMESPACE "JoinerySkeletalRefit"
@@ -57,11 +60,29 @@ void FJoinerySkeletalRefitModule::RegisterMenus()
 
 TSharedRef<SDockTab> FJoinerySkeletalRefitModule::SpawnWindowTab(const FSpawnTabArgs& Args)
 {
-	return SNew(SDockTab)
-		.TabRole(ETabRole::NomadTab)
+	const TSharedRef<SDockTab> Tab = SNew(SDockTab)
+		.TabRole(ETabRole::NomadTab);
+
+	// 内容抽屉（Ctrl+空格）是从前台标签页自己的状态栏里弹出的，所以标签页底部要带一条状态栏
+	TSharedRef<SWidget> StatusBar = SNullWidget::NullWidget;
+	UStatusBarSubsystem* StatusBarSubsystem = GEditor != nullptr ? GEditor->GetEditorSubsystem<UStatusBarSubsystem>() : nullptr;
+	if (IsValid(StatusBarSubsystem)) StatusBar = StatusBarSubsystem->MakeStatusBarWidget(JNSkeletalRefitConstants::StatusBarName, Tab);
+
+	Tab->SetContent(
+		SNew(SVerticalBox)
+
+		+ SVerticalBox::Slot()
+		.FillHeight(1.0f)
 		[
 			SNew(SJNSkeletalRefitWindow)
-		];
+		]
+
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		[
+			StatusBar
+		]);
+	return Tab;
 }
 
 void FJoinerySkeletalRefitModule::OpenWindow()

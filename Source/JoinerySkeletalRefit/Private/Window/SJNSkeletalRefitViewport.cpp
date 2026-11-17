@@ -63,7 +63,8 @@ void FJNSkeletalRefitViewportClient::Draw(const FSceneView* View, FPrimitiveDraw
 
 void SJNSkeletalRefitViewport::Construct(const FArguments& InArgs)
 {
-	PreviewScene = MakeShared<FAdvancedPreviewScene>(FPreviewScene::ConstructionValues());
+	// 预览世界默认不跑物理，布料也就不模拟；和引擎的动画编辑器一样把它打开
+	PreviewScene = MakeShared<FAdvancedPreviewScene>(FPreviewScene::ConstructionValues().ShouldSimulatePhysics(true));
 	SEditorViewport::Construct(SEditorViewport::FArguments());
 }
 
