@@ -5,7 +5,7 @@
 
 struct FSlateBrush;
 
-/** 对应表条目在 Details 面板里的显示：行首按处理方式显示图标，后面是来源骨骼名；展开后是其余字段。 */
+/** 骨骼处理表条目在 Details 面板里的显示：行首按处理方式显示图标，后面是来源骨骼名；展开后是其余字段。 */
 class FJNBoneRefitEntryCustomization : public IPropertyTypeCustomization
 {
 private:

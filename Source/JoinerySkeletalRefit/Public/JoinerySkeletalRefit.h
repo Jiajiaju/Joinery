@@ -6,7 +6,7 @@
 class FSpawnTabArgs;
 class SDockTab;
 
-/** Skeletal Refit 工具模块：登记转换窗口、Joinery 菜单里的入口，以及对应表条目的 Details 显示。 */
+/** Skeletal Refit 工具模块：登记转换窗口、Joinery 菜单里的入口，以及骨骼处理表条目的 Details 显示。 */
 class FJoinerySkeletalRefitModule : public IModuleInterface
 {
 public:

@@ -4,7 +4,7 @@
 #include "Enum/JNBoneRefitAction.h"
 #include "JNBoneRefitEntry.generated.h"
 
-/** 对应表里的一行：来源骨架上的一根骨骼，以及它转换到目标骨架时的处理方式。 */
+/** 骨骼处理表里的一行：来源骨架上的一根骨骼，以及它转换到目标骨架时的处理方式。 */
 USTRUCT()
 struct FJNBoneRefitEntry
 {
@@ -27,7 +27,7 @@ struct FJNBoneRefitEntry
 	UPROPERTY(EditAnywhere, Category = "Bone", meta = (EditCondition = "Action != EJNBoneRefitAction::Discard"))
 	FName TargetBone = NAME_None;
 
-	/** Append 时新骨骼的名字；留空时用对应表的追加前缀加来源骨骼名。 */
+	/** Append 时新骨骼的名字；留空时用骨骼处理表的追加前缀加来源骨骼名。 */
 	UPROPERTY(EditAnywhere, Category = "Bone", meta = (EditCondition = "Action == EJNBoneRefitAction::Append"))
 	FName NewName = NAME_None;
 };

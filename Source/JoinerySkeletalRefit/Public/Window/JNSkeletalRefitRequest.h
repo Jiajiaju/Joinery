@@ -1,25 +1,25 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Struct/JNSkeletalRefitSettings.h"
 #include "UObject/Object.h"
 #include "JNSkeletalRefitRequest.generated.h"
 
 class UAnimationAsset;
-class UJNSkeletalRefitProfile;
 class USkeletalMesh;
 
-/** 转换窗口里填写的一次转换请求：用哪份对应表、转换哪些网格、结果放哪。只在窗口存续期间存在，不存盘。 */
+/** 转换窗口里填写的一次转换请求：转到哪套骨架、转换哪些网格、每根骨骼怎么处理、结果放哪。只在窗口存续期间存在，不存盘。 */
 UCLASS(Transient)
 class UJNSkeletalRefitRequest : public UObject
 {
 	GENERATED_BODY()
 
 public:
-	/** 骨骼对应表，目标骨架由它指定。 */
-	UPROPERTY(EditAnywhere, Category = "Skeletal Refit")
-	TObjectPtr<UJNSkeletalRefitProfile> Profile = nullptr;
+	/** 目标骨架与骨骼处理表。 */
+	UPROPERTY(EditAnywhere, Category = "Skeletal Refit", meta = (ShowOnlyInnerProperties))
+	FJNSkeletalRefitSettings Settings;
 
-	/** 要转换的网格。身体与头这类共用骨骼的网格放在一起，用同一份对应表转换，接缝处的骨骼结果一致。 */
+	/** 要转换的网格。身体与头这类分开的网格放在一起转换，身体放第一个：预览时第一个网格播放动画，其余跟随它。 */
 	UPROPERTY(EditAnywhere, Category = "Skeletal Refit")
 	TArray<TObjectPtr<USkeletalMesh>> Meshes;
 

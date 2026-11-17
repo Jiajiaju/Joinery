@@ -31,7 +31,7 @@ public:
 };
 
 /**
- * Skeletal Refit 的预览视口：显示按对应表临时转换出的网格，可以播放目标骨架上的动画、叠画骨骼。
+ * Skeletal Refit 的预览视口：显示按骨骼处理表临时转换出的网格，可以播放目标骨架上的动画、叠画骨骼。
  * 同批的网格一起显示，第一个网格播放动画，其余网格跟随它的姿态，用来检查身体与头这类分开的网格的接缝。
  */
 class SJNSkeletalRefitViewport : public SEditorViewport

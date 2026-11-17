@@ -17,7 +17,6 @@ public class JoinerySkeletalRefit : ModuleRules
 			new string[]
 			{
 				"AnimationCore",
-				"AssetDefinition",
 				"AdvancedPreviewScene",
 				"AssetTools",
 				"CoreUObject",

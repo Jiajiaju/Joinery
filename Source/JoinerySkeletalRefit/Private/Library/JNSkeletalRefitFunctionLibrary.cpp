@@ -1,7 +1,7 @@
 #include "Library/JNSkeletalRefitFunctionLibrary.h"
 
 #include "Animation/Skeleton.h"
-#include "Asset/JNSkeletalRefitProfile.h"
+#include "Struct/JNSkeletalRefitSettings.h"
 #include "AssetToolsModule.h"
 #include "BoneWeights.h"
 #include "Common/Constant/JNSkeletalRefitConstants.h"
@@ -22,36 +22,34 @@
 
 #define LOCTEXT_NAMESPACE "JNSkeletalRefit"
 
-int32 UJNSkeletalRefitFunctionLibrary::AutoFillProfile(UJNSkeletalRefitProfile* Profile, const USkeletalMesh* Mesh)
+int32 UJNSkeletalRefitFunctionLibrary::FillBones(FJNSkeletalRefitSettings& Settings, const USkeletalMesh* Mesh)
 {
-	if (!IsValid(Profile) || !IsValid(Profile->TargetSkeleton) || !IsValid(Mesh)) return 0;
+	if (!IsValid(Settings.TargetSkeleton) || !IsValid(Mesh)) return 0;
 
 	TSet<int32> WeightedBones;
 	CollectWeightedBones(Mesh, WeightedBones);
 
 	const FReferenceSkeleton& Source = Mesh->GetRefSkeleton();
-	const FReferenceSkeleton& Target = Profile->TargetSkeleton->GetReferenceSkeleton();
+	const FReferenceSkeleton& Target = Settings.TargetSkeleton->GetReferenceSkeleton();
 
-	Profile->Modify();
 	int32 AddedCount = 0;
 	for (int32 SourceIndex = 0; SourceIndex < Source.GetRawBoneNum(); ++SourceIndex)
 	{
 		const FName SourceBone = Source.GetBoneName(SourceIndex);
-		if (Profile->FindEntry(SourceBone) != nullptr) continue;
+		if (Settings.FindEntry(SourceBone) != nullptr) continue;
 
-		Profile->Bones.Add(MakeAutoEntry(Target, SourceBone, WeightedBones.Contains(SourceIndex)));
+		Settings.Bones.Add(MakeAutoEntry(Target, SourceBone, WeightedBones.Contains(SourceIndex)));
 		++AddedCount;
 	}
 
-	if (AddedCount > 0) Profile->MarkPackageDirty();
 	return AddedCount;
 }
 
-bool UJNSkeletalRefitFunctionLibrary::BuildPlan(const UJNSkeletalRefitProfile* Profile, const USkeletalMesh* SourceMesh, FJNSkeletalRefitPlan& OutPlan, FJNSkeletalRefitResult& OutResult)
+bool UJNSkeletalRefitFunctionLibrary::BuildPlan(const FJNSkeletalRefitSettings& Settings, const USkeletalMesh* SourceMesh, FJNSkeletalRefitPlan& OutPlan, FJNSkeletalRefitResult& OutResult)
 {
-	if (!IsValid(Profile) || !IsValid(Profile->TargetSkeleton))
+	if (!IsValid(Settings.TargetSkeleton))
 	{
-		OutResult.Error = LOCTEXT("NoTargetSkeleton", "The profile has no target skeleton.");
+		OutResult.Error = LOCTEXT("NoTargetSkeleton", "No target skeleton.");
 		return false;
 	}
 	if (!IsValid(SourceMesh))
@@ -59,7 +57,7 @@ bool UJNSkeletalRefitFunctionLibrary::BuildPlan(const UJNSkeletalRefitProfile* P
 		OutResult.Error = LOCTEXT("NoSourceMesh", "No source mesh.");
 		return false;
 	}
-	if (SourceMesh->GetSkeleton() == Profile->TargetSkeleton)
+	if (SourceMesh->GetSkeleton() == Settings.TargetSkeleton)
 	{
 		OutResult.Error = FText::Format(LOCTEXT("AlreadyOnTarget", "'{0}' already uses the target skeleton."), FText::FromString(SourceMesh->GetName()));
 		return false;
@@ -67,7 +65,7 @@ bool UJNSkeletalRefitFunctionLibrary::BuildPlan(const UJNSkeletalRefitProfile* P
 
 	TSet<int32> WeightedBones;
 	CollectWeightedBones(SourceMesh, WeightedBones);
-	return BuildBonePlan(Profile, SourceMesh->GetRefSkeleton(), WeightedBones, OutPlan, OutResult);
+	return BuildBonePlan(Settings, SourceMesh->GetRefSkeleton(), WeightedBones, OutPlan, OutResult);
 }
 
 bool UJNSkeletalRefitFunctionLibrary::ApplyPlan(const FJNSkeletalRefitPlan& Plan, USkeletalMesh* Mesh, USkeleton* Skeleton, FJNSkeletalRefitResult& OutResult)
@@ -147,13 +145,13 @@ bool UJNSkeletalRefitFunctionLibrary::ApplyPlan(const FJNSkeletalRefitPlan& Plan
 	return true;
 }
 
-USkeletalMesh* UJNSkeletalRefitFunctionLibrary::RefitMesh(const UJNSkeletalRefitProfile* Profile, USkeletalMesh* SourceMesh, const FString& OutputFolder, const FString& OutputSuffix, FJNSkeletalRefitResult& OutResult)
+USkeletalMesh* UJNSkeletalRefitFunctionLibrary::RefitMesh(const FJNSkeletalRefitSettings& Settings, USkeletalMesh* SourceMesh, const FString& OutputFolder, const FString& OutputSuffix, FJNSkeletalRefitResult& OutResult)
 {
 	OutResult = FJNSkeletalRefitResult();
 
 	// 先算方案，方案不成立就不产生任何资产
 	FJNSkeletalRefitPlan Plan;
-	if (!BuildPlan(Profile, SourceMesh, Plan, OutResult)) return nullptr;
+	if (!BuildPlan(Settings, SourceMesh, Plan, OutResult)) return nullptr;
 
 	const FString PackagePath = OutputFolder.IsEmpty() ? FPackageName::GetLongPackagePath(SourceMesh->GetOutermost()->GetName()) : OutputFolder;
 	const FString AssetName = SourceMesh->GetName() + OutputSuffix;
@@ -172,33 +170,33 @@ USkeletalMesh* UJNSkeletalRefitFunctionLibrary::RefitMesh(const UJNSkeletalRefit
 	}
 
 	// 应用失败时新网格资产留着供检查，不算成功
-	if (!ApplyPlan(Plan, NewMesh, Profile->TargetSkeleton, OutResult)) return nullptr;
+	if (!ApplyPlan(Plan, NewMesh, Settings.TargetSkeleton.Get(), OutResult)) return nullptr;
 
-	UE_LOG(LogJNSkeletalRefit, Log, TEXT("Refitted '%s' to skeleton '%s' as '%s' with %d warning(s)."), *SourceMesh->GetPathName(), *Profile->TargetSkeleton->GetPathName(), *NewMesh->GetPathName(), OutResult.Warnings.Num());
+	UE_LOG(LogJNSkeletalRefit, Log, TEXT("Refitted '%s' to skeleton '%s' as '%s' with %d warning(s)."), *SourceMesh->GetPathName(), *Settings.TargetSkeleton->GetPathName(), *NewMesh->GetPathName(), OutResult.Warnings.Num());
 	OutResult.bSucceeded = true;
 	return NewMesh;
 }
 
-USkeleton* UJNSkeletalRefitFunctionLibrary::MakePreviewSkeleton(const UJNSkeletalRefitProfile* Profile)
+USkeleton* UJNSkeletalRefitFunctionLibrary::MakePreviewSkeleton(const FJNSkeletalRefitSettings& Settings)
 {
-	if (!IsValid(Profile) || !IsValid(Profile->TargetSkeleton)) return nullptr;
+	if (!IsValid(Settings.TargetSkeleton)) return nullptr;
 
 	// 目标骨架的临时副本：承载预览里追加的骨骼，并登记为与目标骨架兼容，目标骨架上的动画可以直接播
-	USkeleton* PreviewSkeleton = DuplicateObject<USkeleton>(Profile->TargetSkeleton, GetTransientPackage());
+	USkeleton* PreviewSkeleton = DuplicateObject<USkeleton>(Settings.TargetSkeleton.Get(), GetTransientPackage());
 	if (!IsValid(PreviewSkeleton)) return nullptr;
 
 	PreviewSkeleton->ClearFlags(RF_Public | RF_Standalone);
 	PreviewSkeleton->SetFlags(RF_Transient);
-	PreviewSkeleton->AddCompatibleSkeleton(Profile->TargetSkeleton);
+	PreviewSkeleton->AddCompatibleSkeleton(Settings.TargetSkeleton.Get());
 	return PreviewSkeleton;
 }
 
-USkeletalMesh* UJNSkeletalRefitFunctionLibrary::MakePreviewMesh(const UJNSkeletalRefitProfile* Profile, USkeletalMesh* SourceMesh, USkeleton* PreviewSkeleton, FJNSkeletalRefitResult& OutResult)
+USkeletalMesh* UJNSkeletalRefitFunctionLibrary::MakePreviewMesh(const FJNSkeletalRefitSettings& Settings, USkeletalMesh* SourceMesh, USkeleton* PreviewSkeleton, FJNSkeletalRefitResult& OutResult)
 {
 	OutResult = FJNSkeletalRefitResult();
 
 	FJNSkeletalRefitPlan Plan;
-	if (!BuildPlan(Profile, SourceMesh, Plan, OutResult)) return nullptr;
+	if (!BuildPlan(Settings, SourceMesh, Plan, OutResult)) return nullptr;
 
 	USkeletalMesh* PreviewMesh = DuplicateObject<USkeletalMesh>(SourceMesh, GetTransientPackage());
 	if (!IsValid(PreviewMesh))
@@ -350,9 +348,9 @@ FQuat UJNSkeletalRefitFunctionLibrary::ComputeAlignment(const FReferenceSkeleton
 	return (Twist * Alignment).GetNormalized();
 }
 
-bool UJNSkeletalRefitFunctionLibrary::BuildBonePlan(const UJNSkeletalRefitProfile* Profile, const FReferenceSkeleton& Source, const TSet<int32>& WeightedBones, FJNSkeletalRefitPlan& OutPlan, FJNSkeletalRefitResult& OutResult)
+bool UJNSkeletalRefitFunctionLibrary::BuildBonePlan(const FJNSkeletalRefitSettings& Settings, const FReferenceSkeleton& Source, const TSet<int32>& WeightedBones, FJNSkeletalRefitPlan& OutPlan, FJNSkeletalRefitResult& OutResult)
 {
-	const FReferenceSkeleton& Target = Profile->TargetSkeleton->GetReferenceSkeleton();
+	const FReferenceSkeleton& Target = Settings.TargetSkeleton->GetReferenceSkeleton();
 	const int32 SourceBoneCount = Source.GetRawBoneNum();
 	const int32 TargetBoneCount = Target.GetRawBoneNum();
 
@@ -369,8 +367,8 @@ bool UJNSkeletalRefitFunctionLibrary::BuildBonePlan(const UJNSkeletalRefitProfil
 	for (int32 SourceIndex = 0; SourceIndex < SourceBoneCount; ++SourceIndex)
 	{
 		const FName SourceBone = Source.GetBoneName(SourceIndex);
-		const FJNBoneRefitEntry* ProfileEntry = Profile->FindEntry(SourceBone);
-		FJNBoneRefitEntry Entry = ProfileEntry != nullptr ? *ProfileEntry : MakeAutoEntry(Target, SourceBone, WeightedBones.Contains(SourceIndex));
+		const FJNBoneRefitEntry* ListedEntry = Settings.FindEntry(SourceBone);
+		FJNBoneRefitEntry Entry = ListedEntry != nullptr ? *ListedEntry : MakeAutoEntry(Target, SourceBone, WeightedBones.Contains(SourceIndex));
 		if (Entry.Action == EJNBoneRefitAction::Map)
 		{
 			const int32 TargetIndex = Target.FindRawBoneIndex(Entry.TargetBone);
@@ -401,7 +399,7 @@ bool UJNSkeletalRefitFunctionLibrary::BuildBonePlan(const UJNSkeletalRefitProfil
 	{
 		const int32 ParentIndex = Target.GetRawParentIndex(TargetIndex);
 		const bool bParentExcluded = ParentIndex != INDEX_NONE && !IncludedTargets[ParentIndex];
-		IncludedTargets[TargetIndex] = !bParentExcluded && !Profile->ExcludedTargetBones.Contains(Target.GetBoneName(TargetIndex));
+		IncludedTargets[TargetIndex] = !bParentExcluded && !Settings.ExcludedTargetBones.Contains(Target.GetBoneName(TargetIndex));
 	}
 	for (int32 TargetIndex = 0; TargetIndex < TargetBoneCount; ++TargetIndex)
 	{
@@ -470,7 +468,7 @@ bool UJNSkeletalRefitFunctionLibrary::BuildBonePlan(const UJNSkeletalRefitProfil
 		if (Entry.Action != EJNBoneRefitAction::Append) continue;
 
 		const FName SourceBone = Source.GetBoneName(SourceIndex);
-		const FName NewName = Entry.NewName.IsNone() ? FName(*(Profile->AppendPrefix + SourceBone.ToString())) : Entry.NewName;
+		const FName NewName = Entry.NewName.IsNone() ? FName(*(Settings.AppendPrefix + SourceBone.ToString())) : Entry.NewName;
 		if (NewNames.Contains(NewName))
 		{
 			OutResult.Error = FText::Format(LOCTEXT("AppendNameTaken", "Bone '{0}' cannot be appended as '{1}': the name is already used."), FText::FromName(SourceBone), FText::FromName(NewName));

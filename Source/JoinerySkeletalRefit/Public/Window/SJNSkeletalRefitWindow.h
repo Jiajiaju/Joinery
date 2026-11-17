@@ -4,15 +4,16 @@
 #include "UObject/GCObject.h"
 #include "Widgets/SCompoundWidget.h"
 
+class IDetailsView;
 class SJNSkeletalRefitViewport;
 class UJNSkeletalRefitRequest;
 struct FPropertyChangedEvent;
 struct FSlateBrush;
 
 /**
- * Skeletal Refit 的转换窗口。左边填写对应表、网格、输出位置与预览选项，下面三个按钮分别是按同名自动填表、
- * 刷新预览与执行转换，再下面只读显示上一次操作的结果；右边是预览视口，显示按当前对应表临时转换出的网格。
- * 对应表的逐行内容在对应表资产自己的编辑器里改，改完点 Preview 刷新。
+ * Skeletal Refit 的转换窗口。左边直接选目标骨架与网格，骨骼处理表随之按自动规则填好并可逐行修改；
+ * 下面三个按钮分别是重置骨骼处理表、刷新预览与导出，再下面只读显示上一次操作的结果。
+ * 右边是预览视口，显示按当前设置临时转换出的网格。
  */
 class SJNSkeletalRefitWindow : public SCompoundWidget, public FGCObject
 {
@@ -20,6 +21,7 @@ private:
 	/** 窗口里填写的转换请求，由本窗口持有。 */
 	TObjectPtr<UJNSkeletalRefitRequest> Request = nullptr;
 
+	TSharedPtr<IDetailsView> DetailsView;
 	TSharedPtr<SJNSkeletalRefitViewport> Viewport;
 
 	/** 上一次操作的结果文字。 */
@@ -42,15 +44,18 @@ private:
 	/** 建一个带图标的按钮。 */
 	TSharedRef<SWidget> MakeButton(const FSlateBrush* Icon, const FText& Label, const FText& ToolTip, FReply (SJNSkeletalRefitWindow::*Handler)());
 
-	/** 请求里的属性改了：把骨骼显示开关同步给视口。 */
+	/** 按自动规则给骨骼处理表补上各网格里还没有列出的骨骼；bReset 为真时先清空，丢掉手改的行。 */
+	void FillBones(const bool bReset);
+
+	/** 请求里的属性改了：目标骨架或网格变了就补骨骼处理表，并把骨骼显示开关同步给视口。 */
 	void HandleRequestChanged(const FPropertyChangedEvent& PropertyChangedEvent);
 
-	/** 用第一个网格给对应表补上还没有列出的骨骼。 */
-	FReply HandleAutoFillClicked();
+	/** 按自动规则重新生成骨骼处理表。 */
+	FReply HandleResetBonesClicked();
 
-	/** 按当前对应表临时转换请求里的网格并显示在视口里，不产生资产。 */
+	/** 按当前设置临时转换请求里的网格并显示在视口里，不产生资产。 */
 	FReply HandlePreviewClicked();
 
-	/** 逐个转换请求里的网格，并汇总结果。 */
-	FReply HandleRefitClicked();
+	/** 逐个转换请求里的网格，生成新的网格资产，并汇总结果。 */
+	FReply HandleExportClicked();
 };

@@ -30,8 +30,6 @@ namespace JNCoreConstants
 	/** 图标名，对应 Resources/Icons 下的同名 SVG。 */
 	inline const FName JoineryIconName(TEXT("Joinery.Joinery"));
 	inline const FName SkeletalRefitIconName(TEXT("Joinery.SkeletalRefit"));
-	inline const FName ProfileIconName(TEXT("Joinery.Profile"));
-	inline const FName ProfileThumbnailName(TEXT("Joinery.ProfileThumbnail"));
 	inline const FName MapIconName(TEXT("Joinery.Map"));
 	inline const FName AppendIconName(TEXT("Joinery.Append"));
 	inline const FName MergeIconName(TEXT("Joinery.Merge"));
@@ -41,7 +39,6 @@ namespace JNCoreConstants
 
 	inline constexpr const TCHAR* JoineryIconFile = TEXT("JNJoinery_16");
 	inline constexpr const TCHAR* SkeletalRefitIconFile = TEXT("JNSkeletalRefit_16");
-	inline constexpr const TCHAR* ProfileIconFile = TEXT("JNProfile_16");
 	inline constexpr const TCHAR* MapIconFile = TEXT("JNMap_16");
 	inline constexpr const TCHAR* AppendIconFile = TEXT("JNAppend_16");
 	inline constexpr const TCHAR* MergeIconFile = TEXT("JNMerge_16");

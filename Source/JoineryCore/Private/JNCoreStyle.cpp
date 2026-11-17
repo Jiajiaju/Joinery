@@ -20,8 +20,6 @@ void FJNCoreStyle::Initialize()
 
 	RegisterIcon(JNCoreConstants::JoineryIconName, JNCoreConstants::JoineryIconFile, JNCoreConstants::Icon16);
 	RegisterIcon(JNCoreConstants::SkeletalRefitIconName, JNCoreConstants::SkeletalRefitIconFile, JNCoreConstants::Icon16);
-	RegisterIcon(JNCoreConstants::ProfileIconName, JNCoreConstants::ProfileIconFile, JNCoreConstants::Icon16);
-	RegisterIcon(JNCoreConstants::ProfileThumbnailName, JNCoreConstants::ProfileIconFile, JNCoreConstants::Icon64);
 	RegisterIcon(JNCoreConstants::MapIconName, JNCoreConstants::MapIconFile, JNCoreConstants::Icon16);
 	RegisterIcon(JNCoreConstants::AppendIconName, JNCoreConstants::AppendIconFile, JNCoreConstants::Icon16);
 	RegisterIcon(JNCoreConstants::MergeIconName, JNCoreConstants::MergeIconFile, JNCoreConstants::Icon16);
