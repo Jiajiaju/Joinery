@@ -1,0 +1,28 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "1.0",
+	"FriendlyName": "Joinery",
+	"Description": "细木作：与项目无关的编辑器便利工具箱。Skeletal Refit 把蒙在任意人形骨架上的网格重新绑定到目标骨架。",
+	"Category": "Editor",
+	"CreatedBy": "",
+	"CreatedByURL": "",
+	"DocsURL": "",
+	"MarketplaceURL": "",
+	"CanContainContent": false,
+	"IsBetaVersion": false,
+	"IsExperimentalVersion": false,
+	"Installed": false,
+	"Modules": [
+		{
+			"Name": "JoineryWorkbench",
+			"Type": "Editor",
+			"LoadingPhase": "Default"
+		},
+		{
+			"Name": "JoinerySkeletalRefit",
+			"Type": "Editor",
+			"LoadingPhase": "Default"
+		}
+	]
+}

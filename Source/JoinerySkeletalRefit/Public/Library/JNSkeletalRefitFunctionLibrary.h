@@ -1,0 +1,66 @@
+#pragma once
+
+#include "CoreMinimal.h"
+#include "Kismet/BlueprintFunctionLibrary.h"
+#include "Struct/JNBoneRefitEntry.h"
+#include "JNSkeletalRefitFunctionLibrary.generated.h"
+
+class UJNSkeletalRefitJig;
+class USkeletalMesh;
+struct FJNSkeletalRefitPlan;
+struct FJNSkeletalRefitResult;
+struct FMeshDescription;
+struct FReferenceSkeleton;
+
+/**
+ * Skeletal Refit 的转换逻辑：按对应表把蒙在来源骨架上的网格重新绑定到目标骨架。
+ * 顶点与变形目标不动，只重建骨骼层级、重算绑定并转移权重；目标骨架上没有的骨骼追加进目标骨架。
+ */
+UCLASS()
+class JOINERYSKELETALREFIT_API UJNSkeletalRefitFunctionLibrary : public UBlueprintFunctionLibrary
+{
+	GENERATED_BODY()
+
+public:
+	/**
+	 * 按自动规则给对应表补上网格里还没有列出的骨骼，已有的行不动。
+	 * @return 新增的行数。
+	 */
+	static int32 AutoFillJig(UJNSkeletalRefitJig* Jig, const USkeletalMesh* Mesh);
+
+	/**
+	 * 复制来源网格并把副本转换到对应表的目标骨架，来源网格不动。新资产与目标骨架只标脏，不保存。
+	 * @param OutputFolder 新网格所在的内容目录，留空时与来源网格同目录。
+	 * @param OutputSuffix 新网格名在来源网格名后追加的后缀。
+	 * @return 转换后的网格，失败时为空，原因在 OutResult。
+	 */
+	static USkeletalMesh* RefitMesh(const UJNSkeletalRefitJig* Jig, USkeletalMesh* SourceMesh, const FString& OutputFolder, const FString& OutputSuffix, FJNSkeletalRefitResult& OutResult);
+
+private:
+	/** 收集网格里真正带权重的骨骼下标。 */
+	static void CollectWeightedBones(const USkeletalMesh* Mesh, TSet<int32>& OutWeightedBones);
+
+	/** 没有列在对应表里的骨骼的处理方式：同名则对应，否则带权重的追加、不带权重的丢弃。 */
+	static FJNBoneRefitEntry MakeAutoEntry(const FReferenceSkeleton& Target, const FName SourceBone, const bool bWeighted);
+
+	/** 由各骨骼的局部静止姿态算出模型空间的静止姿态，不带缩放。 */
+	static void ComputeGlobalPose(const FReferenceSkeleton& RefSkeleton, TArray<FTransform>& OutGlobals);
+
+	/** 从一根目标骨骼往下找第一根有来源骨骼对应的骨骼（含自身），没有时返回 INDEX_NONE。 */
+	static int32 FindMappedBelow(const FReferenceSkeleton& Target, const TArray<int32>& MappedSourceOfTarget, const int32 TargetIndex);
+
+	/** 从一根来源骨骼往上找最近的、已经有去向的祖先，返回它的新骨骼下标，没有时返回 INDEX_NONE。 */
+	static int32 FindResolvedAncestor(const FReferenceSkeleton& Source, const TArray<int32>& SourceToNewIndex, const int32 SourceIndex);
+
+	/**
+	 * 算一根被对应到的目标骨骼的对齐旋转：把目标骨架上"本骨骼指向子骨骼"的方向转到网格上对应的方向。
+	 * 先继承父骨骼的对齐，再用最长的子方向定摆动，有第二个不共线的子方向时再定扭转；没有可用子方向时沿用父骨骼的对齐。
+	 */
+	static FQuat ComputeAlignment(const FReferenceSkeleton& Target, const TArray<FTransform>& TargetGlobals, const TArray<FTransform>& SourceGlobals, const TArray<int32>& MappedSourceOfTarget, const int32 TargetIndex, const FQuat& ParentAlignment);
+
+	/** 按对应表算出转换后的骨骼层级与权重去向。 */
+	static bool BuildPlan(const UJNSkeletalRefitJig* Jig, const FReferenceSkeleton& Source, const TSet<int32>& WeightedBones, FJNSkeletalRefitPlan& OutPlan, FJNSkeletalRefitResult& OutResult);
+
+	/** 把骨骼方案写进一份网格描述：替换骨骼表，并按去向转移各权重配置里的权重。 */
+	static void ApplyPlanToMeshDescription(const FJNSkeletalRefitPlan& Plan, FMeshDescription& MeshDescription);
+};
